@@ -49,7 +49,7 @@ See `tools/WorldGate.Monitor/README.md` for `install.ps1`, configuration, and tr
 
 ## WSL Manager window
 
-Left-click the tray icon (or choose **Open WSL Manager** from the menu) to edit `%USERPROFILE%\.wslconfig` with labeled fields for common `[wsl2]` settings. **Save .wslconfig** validates and writes atomically; you are prompted to run **Restart WSL** (`wsl --shutdown`) when settings need a full shutdown. **Restart WSL** is also available from the tray menu.
+Left-click the tray icon (or choose **Open WSL Manager** from the menu) to edit `%USERPROFILE%\.wslconfig`. The home window has a **Monitor** section (WSL runtime badge, polled every few seconds without starting WSL when the VM is off), a scrollable **WSL configuration** section with `?` help on each field, and **Actions** (**Save .wslconfig**, **Restart WSL**, **Reload**). **Save .wslconfig** validates and writes atomically; you are prompted to run **Restart WSL** (`wsl --shutdown`) when settings need a full shutdown. **Restart WSL** is also available from the tray menu.
 
 ## CI
 
