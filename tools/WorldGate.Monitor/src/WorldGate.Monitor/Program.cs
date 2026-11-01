@@ -12,6 +12,9 @@ internal static class Program
 
         var configurationStore = new ConfigurationStore();
         ConfigurationLoadResult loaded = configurationStore.LoadOrCreate();
+        var seedService = new ManagedImageSeedService(configurationStore, TimeSpan.FromSeconds(45));
+        seedService.TrySeedIfEmptyAsync(loaded.Configuration, loaded.ConfigurationPath).GetAwaiter().GetResult();
+        loaded = configurationStore.LoadOrCreate();
         int pollIntervalSeconds = loaded.Error is null ? loaded.Configuration.PollIntervalSeconds : 10;
         int queueWarningSeconds = loaded.Error is null ? loaded.Configuration.QueueWarningSeconds : 90;
 

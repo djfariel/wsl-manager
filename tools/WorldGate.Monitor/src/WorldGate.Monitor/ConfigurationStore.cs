@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WorldGate.Monitor;
 
@@ -7,13 +8,47 @@ internal sealed record ConfigurationLoadResult(
     string ConfigurationPath,
     string? Error);
 
+internal sealed record ConfigurationSaveResult(bool Succeeded, string? Error)
+{
+    public static ConfigurationSaveResult Success() => new(true, null);
+
+    public static ConfigurationSaveResult Failure(string error) => new(false, error);
+}
+
 internal sealed class ConfigurationStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
+
+    public ConfigurationSaveResult Save(MonitorConfiguration configuration, string configurationPath)
+    {
+        string? validationError = configuration.Validate();
+        if (validationError is not null)
+        {
+            return ConfigurationSaveResult.Failure(validationError);
+        }
+
+        try
+        {
+            string? directory = Path.GetDirectoryName(configurationPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            string json = JsonSerializer.Serialize(configuration, SerializerOptions);
+            File.WriteAllText(configurationPath, json);
+            return ConfigurationSaveResult.Success();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ConfigurationSaveResult.Failure($"Unable to save config.json: {exception.Message}");
+        }
+    }
 
     public ConfigurationLoadResult LoadOrCreate()
     {

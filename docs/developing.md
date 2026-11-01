@@ -1,0 +1,81 @@
+# Developing wsl-manager
+
+This repository hosts **WorldGate.Monitor** under `tools/WorldGate.Monitor/` while the product migrates toward a standalone WSL manager. Builds target .NET 8.
+
+## Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Windows 10/11 for running or installing the WinForms tray app (core library and tests run on Linux/macOS/Windows)
+
+## Repository layout check
+
+Confirms expected project paths and that CI is not coupled to the WorldGate mod:
+
+```powershell
+./scripts/Verify-MonitorLayout.ps1
+```
+
+## Cross-platform core tests
+
+```powershell
+dotnet test ./tools/WorldGate.Monitor/tests/WorldGate.Monitor.Core.Tests/WorldGate.Monitor.Core.Tests.csproj --configuration Release
+```
+
+## Windows shell compilation
+
+WinForms project; on non-Windows hosts use Windows targeting (same as CI):
+
+```powershell
+dotnet build ./tools/WorldGate.Monitor/src/WorldGate.Monitor/WorldGate.Monitor.csproj --configuration Release -p:EnableWindowsTargeting=true
+```
+
+## Dev launch (tray app)
+
+From the repository root, build and start the WSL Manager tray app in a separate process:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1
+```
+
+Use `-NoBuild` to skip the explicit build step (requires a recent Release build; `dotnet run --no-build` is used).
+
+## After UI changes
+
+When tray or WSL Manager window changes are ready for review:
+
+1. Stop any running tray instance (`WorldGateMonitor.exe`) so you do not get duplicate icons.
+2. From the repository root, run:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1
+```
+
+If you already built Release with Windows targeting and only need a relaunch, use `-NoBuild`:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1 -NoBuild
+```
+
+Or use the restart helper (stop tray, then build and launch):
+
+```powershell
+./scripts/Restart-WslManagerDev.ps1
+```
+
+## Solution file
+
+Open `wsl-manager.sln` at the repository root in Visual Studio or Rider for all Monitor projects.
+
+## Install and acceptance (Windows)
+
+See `tools/WorldGate.Monitor/README.md` for `install.ps1`, configuration, and tray acceptance (poll GitHub Actions / ARC via WSL).
+
+## WSL Manager window
+
+Left-click the tray icon (or choose **Open WSL Manager** from the menu) to open a three-column shell: **navigation** (Home, **Runners & images**, WSL configuration, Settings), a **center page** for the current view, and a **Monitor** column (WSL runtime badge plus optional managed-image badges, polled every few seconds without starting WSL when the VM is off). The WSL configuration page edits `%USERPROFILE%\.wslconfig` with `?` help on each field and **Save .wslconfig**, **Restart WSL**, and **Reload**. **Settings** edits `%LOCALAPPDATA%\WorldGateMonitor\config.json` (repository, poll interval, WSL distribution). **Runners & images** registers GitHub Actions runner images and other Docker/Kubernetes workloads in the same `config.json` under `managedImages` (display name, image reference, optional build context path, monitor toggle). Status probes run in WSL only when the utility VM is already running (`docker image inspect` / `docker ps` or `kubectl get pods` for Kubernetes entries). **Install / build** can run `docker pull` or a local `docker build` via WSL, or copy the documented command to the clipboard. **Home** lists monitored images with live status. **Save .wslconfig** validates and writes atomically; you are prompted to run **Restart WSL** (`wsl --shutdown`) when settings need a full shutdown. **Restart WSL** is also available from the tray menu.
+
+Opening the window (tray left-click or **Open WSL Manager**) reloads `.wslconfig` from disk when the form has no unsaved edits; a discard prompt appears only after you change a field or use **Reload** while dirty. Manual check: open WSL Manager twice with no edits (no prompt); change **memory**, click **Reload** (prompt); save or reload to clear dirty state.
+
+## CI
+
+Pull requests that touch Monitor paths run [.github/workflows/monitor-verify.yml](../.github/workflows/monitor-verify.yml): layout verification, core tests, and Windows-targeting build. The workflow does not run on every push or on draft PR sync commits; use **Run workflow** for manual verification.

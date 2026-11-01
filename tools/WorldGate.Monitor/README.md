@@ -14,7 +14,7 @@ The monitor is read-only. GitHub and Kubernetes credentials remain inside WSL; t
 | Degraded | Red | ARC controller/listener health is bad, or the latest monitored completion failed/cancelled. |
 | Unavailable | Gray | WSL, GitHub CLI, Kubernetes, configuration, or provider output is unavailable. |
 
-Hover text is intentionally compact because Windows limits native `NotifyIcon` tooltip length. Right-click the tray icon for the fuller PR/workflow/job and ARC/runner status.
+Hover text is intentionally compact because Windows limits native `NotifyIcon` tooltip length. **Left-click** the tray icon to open the WSL Manager home window (`.wslconfig` editor). Right-click for CI status, **Open WSL Manager**, **Restart WSL**, and the rest of the tray menu.
 
 ## Notifications
 

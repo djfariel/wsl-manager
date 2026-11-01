@@ -1,3 +1,5 @@
+using WorldGate.Monitor.Core.ManagedImages;
+
 namespace WorldGate.Monitor;
 
 internal sealed record MonitorConfiguration
@@ -15,6 +17,8 @@ internal sealed record MonitorConfiguration
     public int PollIntervalSeconds { get; init; } = 10;
 
     public int QueueWarningSeconds { get; init; } = 90;
+
+    public IReadOnlyList<ManagedImageEntry> ManagedImages { get; init; } = [];
 
     public string? Validate()
     {
@@ -43,6 +47,6 @@ internal sealed record MonitorConfiguration
             return "queueWarningSeconds must be between 10 and 3600";
         }
 
-        return null;
+        return ManagedImageConfigValidator.ValidateCollection(ManagedImages);
     }
 }

@@ -12,15 +12,7 @@ See `tools/WorldGate.Monitor/README.md` for install, configuration, and troubles
 
 ## Development
 
-```powershell
-dotnet test .\tools\WorldGate.Monitor\tests\WorldGate.Monitor.Core.Tests\WorldGate.Monitor.Core.Tests.csproj --configuration Release
-```
-
-Windows UI build (requires Windows targeting):
-
-```powershell
-dotnet build .\tools\WorldGate.Monitor\src\WorldGate.Monitor\WorldGate.Monitor.csproj --configuration Release -p:EnableWindowsTargeting=true
-```
+Build, test, layout verification, and CI notes: [docs/developing.md](docs/developing.md).
 
 ## Migration
 
