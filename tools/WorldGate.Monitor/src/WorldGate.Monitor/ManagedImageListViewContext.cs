@@ -5,10 +5,33 @@ namespace WorldGate.Monitor;
 
 internal static class ManagedImageListViewContext
 {
+    public static ListViewItem? GetItemAt(ListView list, Point clientLocation)
+    {
+        ListViewHitTestInfo hit = list.HitTest(clientLocation);
+        return hit.Item;
+    }
+
+    public static int? GetSubItemIndex(ListViewItem item, ListViewItem.ListViewSubItem? subItem)
+    {
+        if (subItem is null)
+        {
+            return 0;
+        }
+
+        for (int index = 0; index < item.SubItems.Count; index++)
+        {
+            if (ReferenceEquals(item.SubItems[index], subItem))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
     public static string? GetEntryIdAt(ListView list, Point clientLocation)
     {
-        ListViewItem? item = list.GetItemAt(clientLocation.X, clientLocation.Y);
-        return ReadEntryId(item);
+        return ReadEntryId(GetItemAt(list, clientLocation));
     }
 
     public static string? ReadEntryId(ListViewItem? item)
@@ -23,7 +46,7 @@ internal static class ManagedImageListViewContext
 
     public static void FocusItemAt(ListView list, Point clientLocation)
     {
-        ListViewItem? item = list.GetItemAt(clientLocation.X, clientLocation.Y);
+        ListViewItem? item = GetItemAt(list, clientLocation);
         if (item is null)
         {
             return;
@@ -58,13 +81,31 @@ internal static class ManagedImageListViewContext
             bool hasTarget = menu.Tag is string id && !string.IsNullOrWhiteSpace(id);
             foreach (ToolStripItem item in menu.Items)
             {
+                item.Tag = menu.Tag;
                 item.Enabled = hasTarget;
             }
         };
 
-        menu.Closed += (_, _) => menu.Tag = null;
+        menu.Closed += (_, _) =>
+        {
+            if (menu.IsHandleCreated)
+            {
+                menu.BeginInvoke(() => menu.Tag = null);
+            }
+            else
+            {
+                menu.Tag = null;
+            }
+        };
     }
 
-    public static string? GetContextEntryId(ContextMenuStrip menu) =>
-        menu.Tag as string;
+    public static string? GetContextEntryId(ContextMenuStrip menu, ToolStripItem? clickedItem = null)
+    {
+        if (clickedItem?.Tag is string itemId && !string.IsNullOrWhiteSpace(itemId))
+        {
+            return itemId;
+        }
+
+        return menu.Tag as string;
+    }
 }

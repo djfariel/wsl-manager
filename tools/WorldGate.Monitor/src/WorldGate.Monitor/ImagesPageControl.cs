@@ -7,6 +7,8 @@ namespace WorldGate.Monitor;
 
 internal sealed class ImagesPageControl : UserControl
 {
+    private const int MonitorColumnIndex = 2;
+
     private readonly ConfigurationStore configurationStore = new();
     private readonly ManagedImageStatusService statusService;
     private readonly ListView runnerList = CreateListView();
@@ -19,12 +21,13 @@ internal sealed class ImagesPageControl : UserControl
     private string configurationPath = string.Empty;
     private IReadOnlyDictionary<string, ManagedImageStatusSnapshot> statusById = new Dictionary<string, ManagedImageStatusSnapshot>();
     private int modalInteractionDepth;
+    private int contextMenuDepth;
     private bool pendingListRebuild;
     private bool pendingStatusRefresh;
 
     public event EventHandler? ManagedImagesChanged;
 
-    public bool PausesBackgroundRefresh => modalInteractionDepth > 0;
+    public bool PausesBackgroundRefresh => modalInteractionDepth > 0 || contextMenuDepth > 0;
 
     public ImagesPageControl(string? wslDistribution)
     {
@@ -111,15 +114,25 @@ internal sealed class ImagesPageControl : UserControl
         group.Controls.Add(list);
 
         var context = new ContextMenuStrip();
-        var editItem = new ToolStripMenuItem("Edit…", null, (_, _) => RunContextAction(context, EditSelected));
-        var removeItem = new ToolStripMenuItem("Remove", null, (_, _) => RunContextAction(context, RemoveSelected));
-        var installItem = new ToolStripMenuItem("Install / build…", null, async (_, _) => await RunContextActionAsync(context, InstallSelectedAsync));
-        var copyCommandItem = new ToolStripMenuItem("Copy install command", null, (_, _) => RunContextAction(context, CopyInstallCommand));
-        var toggleMonitorItem = new ToolStripMenuItem("Toggle monitor", null, (_, _) => RunContextAction(context, ToggleMonitor));
-        var openPathItem = new ToolStripMenuItem("Open build path", null, (_, _) => RunContextAction(context, OpenBuildPath));
+        var editItem = new ToolStripMenuItem("Edit…", null, (sender, _) => RunContextAction(context, sender, EditSelected));
+        var removeItem = new ToolStripMenuItem("Remove", null, (sender, _) => RunContextAction(context, sender, RemoveSelected));
+        var installItem = new ToolStripMenuItem("Install / build…", null, async (sender, _) => await RunContextActionAsync(context, sender, InstallSelectedAsync));
+        var copyCommandItem = new ToolStripMenuItem("Copy install command", null, (sender, _) => RunContextAction(context, sender, CopyInstallCommand));
+        var toggleMonitorItem = new ToolStripMenuItem("Toggle monitor", null, (sender, _) => RunContextAction(context, sender, ToggleMonitor));
+        var openPathItem = new ToolStripMenuItem("Open build path", null, (sender, _) => RunContextAction(context, sender, OpenBuildPath));
         context.Items.AddRange([editItem, removeItem, installItem, copyCommandItem, toggleMonitorItem, openPathItem]);
+        context.Opening += (_, _) => contextMenuDepth++;
+        context.Closed += (_, _) =>
+        {
+            contextMenuDepth = Math.Max(0, contextMenuDepth - 1);
+            if (!PausesBackgroundRefresh)
+            {
+                FlushDeferredRefresh();
+            }
+        };
         ManagedImageListViewContext.BindContextMenu(list, context);
         list.ContextMenuStrip = context;
+        list.MouseClick += (_, e) => OnListMouseClick(list, e);
 
         return group;
     }
@@ -211,6 +224,7 @@ internal sealed class ImagesPageControl : UserControl
 
                 ManagedImageEntry? current = ManagedImageEntryCollection.FindById(baseline.ManagedImages, entry.Id) ?? entry;
                 item.Tag = current;
+                item.SubItems[MonitorColumnIndex].Text = current.MonitorStatus ? "On" : "Off";
                 item.SubItems[3].Text = FormatStatus(current.Id);
             }
         }
@@ -310,7 +324,7 @@ internal sealed class ImagesPageControl : UserControl
             return;
         }
 
-        ListViewItem? item = list.GetItemAt(e.X, e.Y);
+        ListViewItem? item = ManagedImageListViewContext.GetItemAt(list, e.Location);
         if (item?.Tag is not ManagedImageEntry entry)
         {
             return;
@@ -319,9 +333,30 @@ internal sealed class ImagesPageControl : UserControl
         EditSelected(entry.Id);
     }
 
-    private static void RunContextAction(ContextMenuStrip context, Action<string> action)
+    private void OnListMouseClick(ListView list, MouseEventArgs e)
     {
-        if (ManagedImageListViewContext.GetContextEntryId(context) is not { } entryId)
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        ListViewHitTestInfo hit = list.HitTest(e.Location);
+        if (hit.Item?.Tag is not ManagedImageEntry entry)
+        {
+            return;
+        }
+
+        if (ManagedImageListViewContext.GetSubItemIndex(hit.Item, hit.SubItem) != MonitorColumnIndex)
+        {
+            return;
+        }
+
+        ToggleMonitor(entry.Id);
+    }
+
+    private static void RunContextAction(ContextMenuStrip context, object? sender, Action<string> action)
+    {
+        if (ManagedImageListViewContext.GetContextEntryId(context, sender as ToolStripItem) is not { } entryId)
         {
             return;
         }
@@ -329,9 +364,9 @@ internal sealed class ImagesPageControl : UserControl
         action(entryId);
     }
 
-    private static async Task RunContextActionAsync(ContextMenuStrip context, Func<string, Task> action)
+    private static async Task RunContextActionAsync(ContextMenuStrip context, object? sender, Func<string, Task> action)
     {
-        if (ManagedImageListViewContext.GetContextEntryId(context) is not { } entryId)
+        if (ManagedImageListViewContext.GetContextEntryId(context, sender as ToolStripItem) is not { } entryId)
         {
             return;
         }
@@ -543,6 +578,14 @@ internal sealed class ImagesPageControl : UserControl
             return;
         }
 
+        if (!PausesBackgroundRefresh)
+        {
+            FlushDeferredRefresh();
+        }
+    }
+
+    private void FlushDeferredRefresh()
+    {
         if (pendingListRebuild)
         {
             pendingListRebuild = false;

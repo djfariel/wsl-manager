@@ -19,6 +19,43 @@ public sealed class ManagedImageEntryCollectionTests
     }
 
     [Fact]
+    public void ReplaceById_toggles_monitorStatus_for_one_entry_when_refs_differ_only_by_id()
+    {
+        var first = new ManagedImageEntry
+        {
+            Id = "wg-2",
+            DisplayName = "worldgate-runner:2026.09.04-2",
+            ImageReference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-2",
+            MonitorStatus = true,
+        };
+        var second = new ManagedImageEntry
+        {
+            Id = "wg-1",
+            DisplayName = "worldgate-runner:2026.09.04-1",
+            ImageReference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-1",
+            MonitorStatus = false,
+        };
+        var factorio = new ManagedImageEntry
+        {
+            Id = "factorio",
+            DisplayName = "factorio-runner:2026.09.11-1",
+            ImageReference = "ghcr.io/djfariel/factorio-runner:2026.09.11-1",
+            MonitorStatus = false,
+        };
+
+        IReadOnlyList<ManagedImageEntry> toggledFactorio = ManagedImageEntryCollection.ReplaceById(
+            [first, second, factorio],
+            factorio with { MonitorStatus = true });
+        IReadOnlyList<ManagedImageEntry> toggledSecond = ManagedImageEntryCollection.ReplaceById(
+            toggledFactorio,
+            second with { MonitorStatus = true });
+
+        Assert.True(toggledSecond[2].MonitorStatus);
+        Assert.True(toggledSecond[1].MonitorStatus);
+        Assert.True(toggledSecond[0].MonitorStatus);
+    }
+
+    [Fact]
     public void FindById_returns_entry_or_null()
     {
         var entry = new ManagedImageEntry { Id = "abc", DisplayName = "x", ImageReference = "x:1" };
