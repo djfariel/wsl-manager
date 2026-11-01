@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using WorldGate.Monitor.Core.ManagedImages;
+using WorldGate.Monitor.Core.WslRuntime;
 
 namespace WorldGate.Monitor;
 
@@ -115,7 +116,10 @@ internal sealed class ImagesPageControl : UserControl
 
         var context = new ContextMenuStrip();
         var editItem = new ToolStripMenuItem("Edit…", null, (sender, _) => RunContextAction(context, sender, EditSelected));
-        var removeItem = new ToolStripMenuItem("Remove", null, (sender, _) => RunContextAction(context, sender, RemoveSelected));
+        var removeItem = new ToolStripMenuItem(
+            "Remove…",
+            null,
+            async (sender, _) => await RunContextActionAsync(context, sender, RemoveSelectedAsync));
         var installItem = new ToolStripMenuItem("Install / build…", null, async (sender, _) => await RunContextActionAsync(context, sender, InstallSelectedAsync));
         var copyCommandItem = new ToolStripMenuItem("Copy install command", null, (sender, _) => RunContextAction(context, sender, CopyInstallCommand));
         var toggleMonitorItem = new ToolStripMenuItem("Toggle monitor", null, (sender, _) => RunContextAction(context, sender, ToggleMonitor));
@@ -412,7 +416,7 @@ internal sealed class ImagesPageControl : UserControl
     private ManagedImageEntry? ResolveEntryById(string entryId) =>
         ManagedImageEntryCollection.FindById(baseline.ManagedImages, entryId);
 
-    private void RemoveSelected(string entryId)
+    private async Task RemoveSelectedAsync(string entryId)
     {
         ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
@@ -422,20 +426,133 @@ internal sealed class ImagesPageControl : UserControl
 
         using (BeginModalInteraction())
         {
-            DialogResult confirm = MessageBox.Show(
-                FindForm(),
-                $"Remove “{existing.DisplayName}” from the managed list?",
-                "Remove image",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button2);
-            if (confirm != DialogResult.Yes)
+            using var dialog = new RemoveManagedImageDialog(existing);
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
             {
                 return;
             }
 
+            bool listOnly = dialog.RemoveFromListOnly;
+            if (listOnly)
+            {
+                SaveEntries(baseline.ManagedImages.Where(entry => entry.Id != existing.Id).ToArray());
+                return;
+            }
+
+            WslRuntimeSnapshot runtime = WslRuntimeProbe.Detect();
+            if (runtime.State != WslRuntimeState.Running)
+            {
+                MessageBox.Show(
+                    FindForm(),
+                    "WSL is not running. Start WSL or choose “Keep image on disk (remove from list only)”.",
+                    "Remove image",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var runner = new WslCommandRunner(baseline.WslDistribution, TimeSpan.FromMinutes(10));
+            string? kubernetesPodsJson = null;
+            string? dockerPsStdout = null;
+
+            IReadOnlyList<ManagedImageRemoveCommandStep> discoverySteps =
+                ManagedImageRemoveHelper.BuildDiscoverySteps(existing, removeFromListOnly: false);
+            foreach (ManagedImageRemoveCommandStep step in discoverySteps)
+            {
+                WslCommandResult result = await runner.RunAsync(step.Arguments, CancellationToken.None).ConfigureAwait(true);
+                LogRemoveStep(existing.DisplayName, step, result);
+                if (!result.Success)
+                {
+                    MessageBox.Show(
+                        FindForm(),
+                        $"{step.Label} failed:\n{FormatCommandFailure(result)}",
+                        "Remove failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (step.Arguments.Count >= 2
+                    && step.Arguments[0] == "kubectl"
+                    && step.Arguments[1] == "get")
+                {
+                    kubernetesPodsJson = result.StandardOutput;
+                }
+
+                if (step.Arguments.SequenceEqual(DockerCliOutputParser.ListAllContainersIdAndImageArgs))
+                {
+                    dockerPsStdout = result.StandardOutput;
+                }
+            }
+
+            IReadOnlyList<ManagedImageRemoveCommandStep> cleanupSteps = ManagedImageRemoveHelper.BuildCleanupSteps(
+                existing,
+                removeFromListOnly: false,
+                kubernetesPodsJson,
+                dockerPsStdout);
+
+            bool dockerImageRemoved = false;
+            foreach (ManagedImageRemoveCommandStep step in cleanupSteps)
+            {
+                if (step.Optional && dockerImageRemoved)
+                {
+                    continue;
+                }
+
+                WslCommandResult result = await runner.RunAsync(step.Arguments, CancellationToken.None).ConfigureAwait(true);
+                LogRemoveStep(existing.DisplayName, step, result);
+
+                if (result.Success && step.Label == "Remove local Docker image")
+                {
+                    dockerImageRemoved = true;
+                }
+
+                if (step.Optional)
+                {
+                    continue;
+                }
+
+                if (!result.Success && step.ContinueOnFailure)
+                {
+                    continue;
+                }
+
+                if (!result.Success)
+                {
+                    MessageBox.Show(
+                        FindForm(),
+                        $"{step.Label} failed:\n{FormatCommandFailure(result)}",
+                        "Remove failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+            }
+
             SaveEntries(baseline.ManagedImages.Where(entry => entry.Id != existing.Id).ToArray());
+            MessageBox.Show(
+                FindForm(),
+                "Cleanup finished and the entry was removed from the managed list.",
+                "Remove image",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            await RefreshStatusAsync(force: true).ConfigureAwait(true);
         }
+    }
+
+    private static string FormatCommandFailure(WslCommandResult result) =>
+        !string.IsNullOrWhiteSpace(result.StandardError)
+            ? result.StandardError.Trim()
+            : result.Error ?? "Command failed";
+
+    private static void LogRemoveStep(string displayName, ManagedImageRemoveCommandStep step, WslCommandResult result)
+    {
+        string status = result.Success ? "ok" : "failed";
+        string detail = ManagedImageProbeDiagnostics.SummarizeCommandFailure(result.StandardError, result.Error);
+        string command = string.Join(' ', step.Arguments);
+        ManagedImageProbeDiagnostics.AppendLogLine(
+            displayName,
+            $"remove {status}: {step.Label} ({command}) — {detail}");
     }
 
     private async Task InstallSelectedAsync(string entryId)

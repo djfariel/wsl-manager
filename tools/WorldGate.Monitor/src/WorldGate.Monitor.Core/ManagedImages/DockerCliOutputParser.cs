@@ -9,6 +9,12 @@ public static class DockerCliOutputParser
         ["docker", "ps", "-a", "--format", "{{.Image}}|{{.State}}"];
 
     /// <summary>
+    /// Arguments for listing all container IDs with image (parsed in-process).
+    /// </summary>
+    public static readonly string[] ListAllContainersIdAndImageArgs =
+        ["docker", "ps", "-a", "--format", "{{.ID}}|{{.Image}}"];
+
+    /// <summary>
     /// User-facing label when a probe command fails; details belong in diagnostics, not the UI.
     /// </summary>
     public const string ProbeFailedSummary = "Probe failed";
@@ -96,6 +102,44 @@ public static class DockerCliOutputParser
         }
 
         return (running, total);
+    }
+
+    /// <summary>
+    /// Parses <see cref="ListAllContainersIdAndImageArgs"/> stdout and returns container IDs using <paramref name="imageReference"/>.
+    /// </summary>
+    public static IReadOnlyList<string> ParseContainerIdsForImageReference(string? stdout, string imageReference)
+    {
+        if (string.IsNullOrWhiteSpace(stdout) || string.IsNullOrWhiteSpace(imageReference))
+        {
+            return [];
+        }
+
+        var ids = new List<string>();
+        foreach (string rawLine in stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            int separator = line.IndexOf('|');
+            if (separator <= 0 || separator >= line.Length - 1)
+            {
+                continue;
+            }
+
+            string containerId = line[..separator].Trim();
+            string containerImage = line[(separator + 1)..].Trim();
+            if (containerId.Length == 0 || !ImageReferenceMatches(containerImage, imageReference))
+            {
+                continue;
+            }
+
+            ids.Add(containerId);
+        }
+
+        return ids;
     }
 
     public static bool ImageReferenceMatches(string containerImage, string imageReference)

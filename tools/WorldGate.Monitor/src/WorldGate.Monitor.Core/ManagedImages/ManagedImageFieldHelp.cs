@@ -27,7 +27,9 @@ public static class ManagedImageFieldHelp
                 + "Runner heuristics include ghcr.io, worldgate, actions-runner, and ARC runner images.",
             ["probeBackend"] =
                 "How status is checked in WSL when the utility VM is running. "
-                + "Docker uses image inspect and container state; Kubernetes counts pods using this image in the namespace below.",
+                + "Docker uses image inspect and container state; Kubernetes counts pods using this image in the namespace below. "
+                + "Remove… runs matching cleanup in WSL (stop/remove containers, docker rmi; for Kubernetes, delete matching pods in the namespace and still remove the local Docker tag if present). "
+                + "Use “Keep image on disk” to drop the list entry only.",
             ["kubernetesNamespace"] =
                 "Namespace passed to kubectl get pods for Kubernetes probes. "
                 + "WorldGate defaults: arc-runners for runner pods, arc-systems for controller/listener.",

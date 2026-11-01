@@ -59,6 +59,51 @@ public static class KubernetesPodImageParser
         }
     }
 
+    /// <summary>
+    /// Returns pod names in the kubectl JSON whose containers use <paramref name="imageReference"/>.
+    /// </summary>
+    public static IReadOnlyList<string> ListPodNamesUsingImage(string? podsJson, string imageReference)
+    {
+        if (string.IsNullOrWhiteSpace(podsJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(podsJson);
+            if (!document.RootElement.TryGetProperty("items", out JsonElement items) || items.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            string needle = NormalizeImageRef(imageReference);
+            var names = new List<string>();
+            foreach (JsonElement pod in items.EnumerateArray())
+            {
+                if (!pod.TryGetProperty("metadata", out JsonElement metadata)
+                    || !metadata.TryGetProperty("name", out JsonElement nameElement))
+                {
+                    continue;
+                }
+
+                string? name = nameElement.GetString();
+                if (string.IsNullOrWhiteSpace(name) || !PodUsesImage(pod, needle))
+                {
+                    continue;
+                }
+
+                names.Add(name);
+            }
+
+            return names;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private static bool PodUsesImage(JsonElement pod, string normalizedNeedle)
     {
         if (!pod.TryGetProperty("spec", out JsonElement spec)
