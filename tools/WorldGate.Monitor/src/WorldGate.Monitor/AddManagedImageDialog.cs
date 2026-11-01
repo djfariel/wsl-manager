@@ -13,6 +13,8 @@ internal sealed class AddManagedImageDialog : Form
     private readonly ComboBox categoryBox = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox backendBox = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox monitorBox = new() { Text = "Monitor status", AutoSize = true, Checked = true };
+    private readonly ToolTip fieldToolTip = new();
+    private readonly HelpProvider helpProvider = new();
 
     public AddManagedImageDialog(ManagedImageEntry? existing = null)
     {
@@ -21,8 +23,9 @@ internal sealed class AddManagedImageDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(520, 360);
+        ClientSize = new Size(560, 380);
         Font = new Font("Segoe UI", 9F);
+        helpProvider.HelpNamespace = string.Empty;
 
         categoryBox.Items.AddRange(["GitHub Actions runner", "Other Docker / Kubernetes"]);
         categoryBox.SelectedIndex = 0;
@@ -33,26 +36,28 @@ internal sealed class AddManagedImageDialog : Form
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
+            ColumnCount = 3,
             Padding = new Padding(12),
             AutoSize = true,
         };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        AddRow(layout, "Display name", nameBox);
-        AddRow(layout, "Image reference", imageRefBox);
-        AddRow(layout, "Build context path", buildPathBox);
-        AddRow(layout, "Category", categoryBox);
-        AddRow(layout, "Status probe", backendBox);
-        AddRow(layout, "Kubernetes namespace", k8sNamespaceBox);
+        AddRow(layout, "displayName", "Display name", nameBox);
+        AddRow(layout, "imageReference", "Image reference", imageRefBox);
+        AddRow(layout, "buildContextPath", "Build context path", buildPathBox);
+        AddRow(layout, "category", "Category", categoryBox);
+        AddRow(layout, "probeBackend", "Status probe", backendBox);
+        AddRow(layout, "kubernetesNamespace", "Kubernetes namespace", k8sNamespaceBox);
 
-        var monitorRow = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
-        monitorRow.Controls.Add(monitorBox);
-        layout.Controls.Add(new Label { Text = string.Empty, AutoSize = true }, 0, layout.RowCount - 1);
-        layout.SetColumnSpan(monitorRow, 2);
-        layout.Controls.Add(monitorRow, 0, layout.RowCount);
+        int monitorRow = layout.RowCount;
         layout.RowCount++;
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(CreateHelpIndicator("monitorStatus", monitorBox), 0, monitorRow);
+        layout.Controls.Add(new Label { Text = "Monitor status", AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 6, 8, 6) }, 1, monitorRow);
+        monitorBox.Margin = new Padding(0, 6, 0, 6);
+        layout.Controls.Add(monitorBox, 2, monitorRow);
 
         var buttons = new FlowLayoutPanel
         {
@@ -81,8 +86,23 @@ internal sealed class AddManagedImageDialog : Form
             k8sNamespaceBox.Text = existing.KubernetesNamespace ?? string.Empty;
             monitorBox.Checked = existing.MonitorStatus;
         }
+        else
+        {
+            k8sNamespaceBox.Text = "arc-runners";
+        }
 
         UpdateK8sVisibility();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            fieldToolTip.Dispose();
+            helpProvider.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     public ManagedImageEntry? BuildEntry(string? existingId = null)
@@ -130,13 +150,39 @@ internal sealed class AddManagedImageDialog : Form
         k8sNamespaceBox.Enabled = k8s;
     }
 
-    private static void AddRow(TableLayoutPanel layout, string labelText, Control editor)
+    private void AddRow(TableLayoutPanel layout, string fieldKey, string labelText, Control editor)
     {
         int row = layout.RowCount;
         layout.RowCount++;
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(new Label { Text = labelText, AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 6, 8, 6) }, 0, row);
+        layout.Controls.Add(CreateHelpIndicator(fieldKey, editor), 0, row);
+        layout.Controls.Add(new Label { Text = labelText, AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 6, 8, 6) }, 1, row);
         editor.Margin = new Padding(0, 3, 0, 3);
-        layout.Controls.Add(editor, 1, row);
+        layout.Controls.Add(editor, 2, row);
+    }
+
+    private Control CreateHelpIndicator(string fieldKey, Control editor)
+    {
+        string helpText = ManagedImageFieldHelp.Get(fieldKey);
+        var help = new Label
+        {
+            Text = "?",
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            ForeColor = Color.FromArgb(0, 102, 204),
+            Font = new Font(Font.FontFamily, Font.Size, FontStyle.Bold),
+            Cursor = Cursors.Help,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Margin = new Padding(0, 6, 0, 6),
+        };
+
+        fieldToolTip.SetToolTip(help, helpText);
+        fieldToolTip.SetToolTip(editor, helpText);
+        helpProvider.SetShowHelp(help, true);
+        helpProvider.SetHelpString(help, helpText);
+        helpProvider.SetShowHelp(editor, true);
+        helpProvider.SetHelpString(editor, helpText);
+
+        return help;
     }
 }

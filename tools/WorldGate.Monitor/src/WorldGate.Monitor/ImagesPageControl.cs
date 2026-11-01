@@ -13,8 +13,7 @@ internal sealed class ImagesPageControl : UserControl
     private readonly ListView otherList = CreateListView();
     private readonly Label pathLabel = new() { AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(720, 0) };
     private readonly Button refreshButton = new() { Text = "Refresh status", AutoSize = true };
-    private readonly Button addRunnerButton = new() { Text = "Add runner image…", AutoSize = true };
-    private readonly Button addOtherButton = new() { Text = "Add other image…", AutoSize = true };
+    private readonly Button addImageButton = new() { Text = "Add image…", AutoSize = true };
 
     private MonitorConfiguration baseline = new();
     private string configurationPath = string.Empty;
@@ -43,10 +42,11 @@ internal sealed class ImagesPageControl : UserControl
         pathLabel.Margin = new Padding(4, 4, 4, 4);
         root.Controls.Add(pathLabel, 0, 0);
 
-        root.Controls.Add(BuildSection("GitHub Actions runner images", runnerList, addRunnerButton), 0, 1);
-        root.Controls.Add(BuildSection("Other Docker / Kubernetes images", otherList, addOtherButton), 0, 2);
+        root.Controls.Add(BuildSection("GitHub Actions runner images", runnerList), 0, 1);
+        root.Controls.Add(BuildSection("Other Docker / Kubernetes images", otherList), 0, 2);
 
         var bar = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+        bar.Controls.Add(addImageButton);
         bar.Controls.Add(refreshButton);
         root.Controls.Add(bar, 0, 3);
 
@@ -54,8 +54,7 @@ internal sealed class ImagesPageControl : UserControl
 
         runnerList.MouseDoubleClick += (_, e) => OnEdit(runnerList, e);
         otherList.MouseDoubleClick += (_, e) => OnEdit(otherList, e);
-        addRunnerButton.Click += (_, _) => AddEntry(ManagedImageCategory.GitHubRunner);
-        addOtherButton.Click += (_, _) => AddEntry(ManagedImageCategory.OtherWorkload);
+        addImageButton.Click += (_, _) => AddEntry();
         refreshButton.Click += async (_, _) => await RefreshStatusAsync();
 
         ReloadFromDisk(silent: true);
@@ -78,15 +77,11 @@ internal sealed class ImagesPageControl : UserControl
         _ = RefreshStatusAsync();
     }
 
-    private Control BuildSection(string title, ListView list, Button addButton)
+    private Control BuildSection(string title, ListView list)
     {
         var group = new GroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(8, 4, 8, 8) };
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
         list.Dock = DockStyle.Fill;
-        layout.Controls.Add(list, 0, 0);
+        group.Controls.Add(list);
 
         var context = new ContextMenuStrip();
         var editItem = new ToolStripMenuItem("Edit…", null, (_, _) => EditSelected(list));
@@ -97,11 +92,6 @@ internal sealed class ImagesPageControl : UserControl
         context.Items.AddRange([editItem, removeItem, installItem, toggleMonitorItem, openPathItem]);
         list.ContextMenuStrip = context;
 
-        var bar = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-        bar.Controls.Add(addButton);
-        layout.Controls.Add(bar, 0, 1);
-
-        group.Controls.Add(layout);
         return group;
     }
 
@@ -181,9 +171,9 @@ internal sealed class ImagesPageControl : UserControl
         return string.Join(" · ", parts);
     }
 
-    private void AddEntry(ManagedImageCategory category)
+    private void AddEntry()
     {
-        using var addDialog = new AddManagedImageDialog(new ManagedImageEntry { Category = category });
+        using var addDialog = new AddManagedImageDialog();
         if (addDialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
