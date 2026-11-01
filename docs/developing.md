@@ -29,6 +29,16 @@ WinForms project; on non-Windows hosts use Windows targeting (same as CI):
 dotnet build ./tools/WorldGate.Monitor/src/WorldGate.Monitor/WorldGate.Monitor.csproj --configuration Release -p:EnableWindowsTargeting=true
 ```
 
+## Dev launch (tray app)
+
+From the repository root, build and start the WSL Manager tray app in a separate process:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1
+```
+
+Use `-NoBuild` to skip the explicit build step (requires a recent Release build; `dotnet run --no-build` is used).
+
 ## Solution file
 
 Open `wsl-manager.sln` at the repository root in Visual Studio or Rider for all Monitor projects.
