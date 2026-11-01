@@ -9,7 +9,7 @@ internal sealed class WslManagerMainForm : Form
 {
     private const int StatusPollIntervalMs = 5000;
     private const int NavColumnWidth = 180;
-    private const int MonitorColumnWidth = 250;
+    private const int MonitorColumnWidth = MonitorBadgeLayout.MonitorColumnWidth;
 
     private enum AppPage
     {
@@ -26,11 +26,23 @@ internal sealed class WslManagerMainForm : Form
     private readonly FlowLayoutPanel managedBadgeRow = new()
     {
         AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.TopDown,
-        WrapContents = true,
+        WrapContents = false,
         Padding = Padding.Empty,
         Margin = Padding.Empty,
     };
+    private readonly Panel monitorBadgeScrollHost = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly FlowLayoutPanel monitorBadgeStack = new()
+    {
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        FlowDirection = FlowDirection.TopDown,
+        WrapContents = false,
+        Dock = DockStyle.Top,
+        Padding = new Padding(4),
+    };
+    private int monitorBadgeRefreshGeneration;
     private readonly System.Windows.Forms.Timer statusPollTimer = new() { Interval = StatusPollIntervalMs };
 
     private readonly HomePageControl homePage = new();
@@ -106,18 +118,13 @@ internal sealed class WslManagerMainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(8, 4, 8, 8),
         };
-        var badgeRow = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = true,
-            Padding = new Padding(4),
-        };
-        badgeRow.Controls.Add(wslRuntimeBadge);
-        badgeRow.Controls.Add(managedBadgeRow);
-        monitorGroup.Controls.Add(badgeRow);
+        monitorBadgeStack.Controls.Add(wslRuntimeBadge);
+        monitorBadgeStack.Controls.Add(managedBadgeRow);
+        monitorBadgeScrollHost.Controls.Add(monitorBadgeStack);
+        monitorBadgeScrollHost.Resize += (_, _) => SyncMonitorBadgeColumnWidth();
+        monitorGroup.Controls.Add(monitorBadgeScrollHost);
         monitorPanel.Controls.Add(monitorGroup);
+        SyncMonitorBadgeColumnWidth();
 
         shell.Controls.Add(navPanel, 0, 0);
         shell.Controls.Add(pageHost, 1, 0);
@@ -296,11 +303,13 @@ internal sealed class WslManagerMainForm : Form
 
     private async Task RefreshMonitorBadgesAsync()
     {
+        int generation = Interlocked.Increment(ref monitorBadgeRefreshGeneration);
+
         WslRuntimeSnapshot runtimeSnapshot = await Task.Run(runtimeStatusService.GetSnapshot);
         IReadOnlyList<ManagedImageStatusSnapshot> managedSnapshots =
             await managedImageStatusService.ProbeMonitoredAsync();
 
-        if (IsDisposed)
+        if (IsDisposed || generation != monitorBadgeRefreshGeneration)
         {
             return;
         }
@@ -317,12 +326,50 @@ internal sealed class WslManagerMainForm : Form
 
     private void RebuildManagedBadges(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
     {
+        int contentWidth = GetMonitorBadgeContentWidth();
         managedBadgeRow.Controls.Clear();
         foreach (ManagedImageStatusSnapshot snapshot in snapshots)
         {
             var badge = new ManagedImageStatusBadgeControl();
             badge.ApplySnapshot(snapshot);
+            MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
             managedBadgeRow.Controls.Add(badge);
+        }
+
+        MonitorBadgeLayout.ConstrainBadgeWidth(wslRuntimeBadge, contentWidth);
+        SyncMonitorBadgeColumnWidth();
+    }
+
+    private int GetMonitorBadgeContentWidth()
+    {
+        int inner = monitorBadgeScrollHost.ClientSize.Width;
+        if (inner <= 0)
+        {
+            inner = MonitorColumnWidth - monitorBadgeScrollHost.Padding.Horizontal - 16;
+        }
+
+        return MonitorBadgeLayout.BadgeContentWidth(inner);
+    }
+
+    private void SyncMonitorBadgeColumnWidth()
+    {
+        if (monitorBadgeScrollHost.ClientSize.Width <= 0)
+        {
+            return;
+        }
+
+        int stackWidth = monitorBadgeScrollHost.ClientSize.Width;
+        if (monitorBadgeScrollHost.AutoScrollMinSize.Width > stackWidth)
+        {
+            stackWidth = monitorBadgeScrollHost.AutoScrollMinSize.Width;
+        }
+
+        monitorBadgeStack.Width = stackWidth;
+        int contentWidth = MonitorBadgeLayout.BadgeContentWidth(stackWidth);
+        MonitorBadgeLayout.ConstrainBadgeWidth(wslRuntimeBadge, contentWidth);
+        foreach (Control control in managedBadgeRow.Controls)
+        {
+            MonitorBadgeLayout.ConstrainBadgeWidth(control, contentWidth);
         }
     }
 

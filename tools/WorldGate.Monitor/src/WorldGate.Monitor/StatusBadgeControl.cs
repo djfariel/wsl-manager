@@ -42,6 +42,15 @@ internal sealed class StatusBadgeControl : Panel
 
     public void SetCaption(string caption) => captionLabel.Text = caption;
 
+    public void SetContentWidth(int contentWidth)
+    {
+        int inner = Math.Max(64, contentWidth);
+        captionLabel.MaximumSize = new Size(inner, 0);
+        valueLabel.MaximumSize = new Size(inner, 0);
+        captionLabel.AutoEllipsis = true;
+        valueLabel.AutoEllipsis = true;
+    }
+
     public void ApplySnapshot(WslRuntimeSnapshot snapshot)
     {
         switch (snapshot.State)

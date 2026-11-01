@@ -53,6 +53,15 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         ContextMenuStrip = menu;
     }
 
+    public void SetContentWidth(int contentWidth)
+    {
+        int inner = Math.Max(64, contentWidth);
+        captionLabel.MaximumSize = new Size(inner, 0);
+        valueLabel.MaximumSize = new Size(inner, 0);
+        captionLabel.AutoEllipsis = true;
+        valueLabel.AutoEllipsis = true;
+    }
+
     public void ApplySnapshot(ManagedImageStatusSnapshot snapshot)
     {
         captionLabel.Text = snapshot.DisplayName;

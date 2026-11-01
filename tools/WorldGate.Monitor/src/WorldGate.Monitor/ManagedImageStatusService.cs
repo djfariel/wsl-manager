@@ -35,7 +35,7 @@ internal sealed class ManagedImageStatusService
     {
         ConfigurationLoadResult loaded = configurationStore.LoadOrCreate();
         IReadOnlyList<ManagedImageEntry> entries = loaded.Configuration.ManagedImages;
-        IReadOnlyList<ManagedImageEntry> monitored = entries.Where(entry => entry.MonitorStatus).ToArray();
+        IReadOnlyList<ManagedImageEntry> monitored = ManagedImageEntryCollection.GetMonitoredEntries(entries);
         if (monitored.Count == 0)
         {
             return [];

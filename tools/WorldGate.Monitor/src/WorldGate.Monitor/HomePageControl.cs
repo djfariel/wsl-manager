@@ -6,12 +6,15 @@ namespace WorldGate.Monitor;
 
 internal sealed class HomePageControl : UserControl
 {
+    private const int HomeBadgeMaxContentWidth = 640;
+
+    private readonly Panel monitoredScrollHost;
     private readonly FlowLayoutPanel monitoredPanel = new()
     {
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.TopDown,
-        WrapContents = true,
+        WrapContents = false,
         Dock = DockStyle.Top,
         Padding = new Padding(4),
     };
@@ -39,7 +42,7 @@ internal sealed class HomePageControl : UserControl
             Padding = new Padding(12, 12, 8, 4),
         };
 
-        var host = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        monitoredScrollHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
         var stack = new TableLayoutPanel
         {
             AutoSize = true,
@@ -50,8 +53,9 @@ internal sealed class HomePageControl : UserControl
         stack.Controls.Add(title);
         stack.Controls.Add(emptyLabel);
         stack.Controls.Add(monitoredPanel);
-        host.Controls.Add(stack);
-        Controls.Add(host);
+        monitoredScrollHost.Controls.Add(stack);
+        monitoredScrollHost.Resize += (_, _) => SyncMonitoredBadgeWidths();
+        Controls.Add(monitoredScrollHost);
     }
 
     public void ApplyMonitoredSnapshots(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
@@ -64,11 +68,33 @@ internal sealed class HomePageControl : UserControl
         }
 
         emptyLabel.Visible = false;
+        int contentWidth = GetMonitoredBadgeContentWidth();
         foreach (ManagedImageStatusSnapshot snapshot in snapshots)
         {
             var badge = new ManagedImageStatusBadgeControl();
             badge.ApplySnapshot(snapshot);
+            MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
             monitoredPanel.Controls.Add(badge);
+        }
+    }
+
+    private int GetMonitoredBadgeContentWidth()
+    {
+        int inner = monitoredScrollHost.ClientSize.Width;
+        if (inner <= 0)
+        {
+            inner = HomeBadgeMaxContentWidth;
+        }
+
+        return Math.Min(HomeBadgeMaxContentWidth, MonitorBadgeLayout.BadgeContentWidth(inner));
+    }
+
+    private void SyncMonitoredBadgeWidths()
+    {
+        int contentWidth = GetMonitoredBadgeContentWidth();
+        foreach (Control control in monitoredPanel.Controls)
+        {
+            MonitorBadgeLayout.ConstrainBadgeWidth(control, contentWidth);
         }
     }
 }

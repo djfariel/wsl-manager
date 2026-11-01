@@ -56,6 +56,46 @@ public sealed class ManagedImageEntryCollectionTests
     }
 
     [Fact]
+    public void GetMonitoredEntries_returns_every_monitor_flag_unique_by_id()
+    {
+        var first = new ManagedImageEntry
+        {
+            Id = "wg-2",
+            DisplayName = "worldgate-runner:2026.09.04-2",
+            ImageReference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-2",
+            MonitorStatus = true,
+        };
+        var second = new ManagedImageEntry
+        {
+            Id = "wg-1",
+            DisplayName = "worldgate-runner:2026.09.04-1",
+            ImageReference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-1",
+            MonitorStatus = true,
+        };
+        var factorio = new ManagedImageEntry
+        {
+            Id = "factorio",
+            DisplayName = "factorio-runner:2026.09.11-1",
+            ImageReference = "ghcr.io/djfariel/factorio-runner:2026.09.11-1",
+            MonitorStatus = true,
+        };
+        var idle = new ManagedImageEntry
+        {
+            Id = "idle",
+            DisplayName = "idle",
+            ImageReference = "ghcr.io/example/idle:1",
+            MonitorStatus = false,
+        };
+        var duplicateId = first with { DisplayName = "duplicate id row" };
+
+        IReadOnlyList<ManagedImageEntry> monitored = ManagedImageEntryCollection.GetMonitoredEntries(
+            [first, second, factorio, idle, duplicateId]);
+
+        Assert.Equal(3, monitored.Count);
+        Assert.Equal(["wg-2", "wg-1", "factorio"], monitored.Select(entry => entry.Id));
+    }
+
+    [Fact]
     public void FindById_returns_entry_or_null()
     {
         var entry = new ManagedImageEntry { Id = "abc", DisplayName = "x", ImageReference = "x:1" };
