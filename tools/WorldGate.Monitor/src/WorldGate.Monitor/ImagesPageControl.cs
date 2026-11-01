@@ -111,12 +111,14 @@ internal sealed class ImagesPageControl : UserControl
         group.Controls.Add(list);
 
         var context = new ContextMenuStrip();
-        var editItem = new ToolStripMenuItem("Edit…", null, (_, _) => EditSelected(list));
-        var removeItem = new ToolStripMenuItem("Remove", null, (_, _) => RemoveSelected(list));
-        var installItem = new ToolStripMenuItem("Install / build…", null, async (_, _) => await InstallSelectedAsync(list));
-        var toggleMonitorItem = new ToolStripMenuItem("Toggle monitor", null, (_, _) => ToggleMonitor(list));
-        var openPathItem = new ToolStripMenuItem("Open build path", null, (_, _) => OpenBuildPath(list));
-        context.Items.AddRange([editItem, removeItem, installItem, toggleMonitorItem, openPathItem]);
+        var editItem = new ToolStripMenuItem("Edit…", null, (_, _) => RunContextAction(context, EditSelected));
+        var removeItem = new ToolStripMenuItem("Remove", null, (_, _) => RunContextAction(context, RemoveSelected));
+        var installItem = new ToolStripMenuItem("Install / build…", null, async (_, _) => await RunContextActionAsync(context, InstallSelectedAsync));
+        var copyCommandItem = new ToolStripMenuItem("Copy install command", null, (_, _) => RunContextAction(context, CopyInstallCommand));
+        var toggleMonitorItem = new ToolStripMenuItem("Toggle monitor", null, (_, _) => RunContextAction(context, ToggleMonitor));
+        var openPathItem = new ToolStripMenuItem("Open build path", null, (_, _) => RunContextAction(context, OpenBuildPath));
+        context.Items.AddRange([editItem, removeItem, installItem, copyCommandItem, toggleMonitorItem, openPathItem]);
+        ManagedImageListViewContext.BindContextMenu(list, context);
         list.ContextMenuStrip = context;
 
         return group;
@@ -314,12 +316,32 @@ internal sealed class ImagesPageControl : UserControl
             return;
         }
 
-        EditSelected(list, entry.Id);
+        EditSelected(entry.Id);
     }
 
-    private void EditSelected(ListView list, string? entryId = null)
+    private static void RunContextAction(ContextMenuStrip context, Action<string> action)
     {
-        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId);
+        if (ManagedImageListViewContext.GetContextEntryId(context) is not { } entryId)
+        {
+            return;
+        }
+
+        action(entryId);
+    }
+
+    private static async Task RunContextActionAsync(ContextMenuStrip context, Func<string, Task> action)
+    {
+        if (ManagedImageListViewContext.GetContextEntryId(context) is not { } entryId)
+        {
+            return;
+        }
+
+        await action(entryId);
+    }
+
+    private void EditSelected(string entryId)
+    {
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
         {
             return;
@@ -352,24 +374,12 @@ internal sealed class ImagesPageControl : UserControl
         }
     }
 
-    private ManagedImageEntry? ResolveEntryForEdit(ListView list, string? entryId)
+    private ManagedImageEntry? ResolveEntryById(string entryId) =>
+        ManagedImageEntryCollection.FindById(baseline.ManagedImages, entryId);
+
+    private void RemoveSelected(string entryId)
     {
-        if (!string.IsNullOrWhiteSpace(entryId))
-        {
-            return ManagedImageEntryCollection.FindById(baseline.ManagedImages, entryId);
-        }
-
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry selected)
-        {
-            return null;
-        }
-
-        return ManagedImageEntryCollection.FindById(baseline.ManagedImages, selected.Id) ?? selected;
-    }
-
-    private void RemoveSelected(ListView list)
-    {
-        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
         {
             return;
@@ -393,9 +403,9 @@ internal sealed class ImagesPageControl : UserControl
         }
     }
 
-    private async Task InstallSelectedAsync(ListView list)
+    private async Task InstallSelectedAsync(string entryId)
     {
-        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
         {
             return;
@@ -451,9 +461,28 @@ internal sealed class ImagesPageControl : UserControl
         }
     }
 
-    private void ToggleMonitor(ListView list)
+    private void CopyInstallCommand(string entryId)
     {
-        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
+        if (existing is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(ManagedImageInstallHelper.DescribeInstallPlan(existing));
+            MessageBox.Show(FindForm(), "Install command copied to the clipboard.", "Copy install command", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(FindForm(), exception.Message, "Clipboard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void ToggleMonitor(string entryId)
+    {
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
         {
             return;
@@ -463,9 +492,9 @@ internal sealed class ImagesPageControl : UserControl
         SaveEntries(ManagedImageEntryCollection.ReplaceById(baseline.ManagedImages, updated));
     }
 
-    private void OpenBuildPath(ListView list)
+    private void OpenBuildPath(string entryId)
     {
-        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        ManagedImageEntry? existing = ResolveEntryById(entryId);
         if (existing is null)
         {
             return;

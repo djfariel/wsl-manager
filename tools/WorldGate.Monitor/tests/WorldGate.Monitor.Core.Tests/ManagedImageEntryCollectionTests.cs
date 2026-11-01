@@ -24,5 +24,7 @@ public sealed class ManagedImageEntryCollectionTests
         var entry = new ManagedImageEntry { Id = "abc", DisplayName = "x", ImageReference = "x:1" };
         Assert.Same(entry, ManagedImageEntryCollection.FindById([entry], "abc"));
         Assert.Null(ManagedImageEntryCollection.FindById([entry], "missing"));
+        Assert.Null(ManagedImageEntryCollection.FindById([entry], ""));
+        Assert.Null(ManagedImageEntryCollection.FindById([entry], "   "));
     }
 }
