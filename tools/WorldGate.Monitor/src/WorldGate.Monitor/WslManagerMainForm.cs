@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using WorldGate.Monitor.Core.ManagedImages;
 using WorldGate.Monitor.Core.WslRuntime;
 
 namespace WorldGate.Monitor;
@@ -13,15 +14,27 @@ internal sealed class WslManagerMainForm : Form
     private enum AppPage
     {
         Home,
+        Images,
         WslConfig,
         Settings,
     }
 
+    private readonly ConfigurationStore configurationStore = new();
     private readonly WslRuntimeStatusService runtimeStatusService = new();
+    private readonly ManagedImageStatusService managedImageStatusService;
     private readonly StatusBadgeControl wslRuntimeBadge = new();
+    private readonly FlowLayoutPanel managedBadgeRow = new()
+    {
+        AutoSize = true,
+        FlowDirection = FlowDirection.TopDown,
+        WrapContents = true,
+        Padding = Padding.Empty,
+        Margin = Padding.Empty,
+    };
     private readonly System.Windows.Forms.Timer statusPollTimer = new() { Interval = StatusPollIntervalMs };
 
     private readonly HomePageControl homePage = new();
+    private readonly ImagesPageControl imagesPage;
     private readonly WslConfigPageControl wslConfigPage = new();
     private readonly SettingsPageControl settingsPage = new();
 
@@ -37,9 +50,15 @@ internal sealed class WslManagerMainForm : Form
 
     private AppPage currentPage = AppPage.Home;
     private bool suppressNavigationEvents;
+    private string? wslDistribution;
 
     public WslManagerMainForm()
     {
+        ConfigurationLoadResult loaded = configurationStore.LoadOrCreate();
+        wslDistribution = loaded.Configuration.WslDistribution;
+        managedImageStatusService = new ManagedImageStatusService(wslDistribution);
+        imagesPage = new ImagesPageControl(wslDistribution);
+
         Text = "WSL Manager";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(920, 560);
@@ -65,12 +84,13 @@ internal sealed class WslManagerMainForm : Form
             Padding = new Padding(8, 12, 4, 8),
             BackColor = Color.FromArgb(243, 244, 246),
         };
-        navigationList.Items.AddRange(["Home", "WSL configuration", "Settings"]);
+        navigationList.Items.AddRange(["Home", "Runners & images", "WSL configuration", "Settings"]);
         navigationList.SelectedIndex = 0;
         navigationList.SelectedIndexChanged += OnNavigationSelectedIndexChanged;
         navPanel.Controls.Add(navigationList);
 
         pageHost.Controls.Add(homePage);
+        pageHost.Controls.Add(imagesPage);
         pageHost.Controls.Add(wslConfigPage);
         pageHost.Controls.Add(settingsPage);
         ShowPage(AppPage.Home, syncNavigation: false);
@@ -95,6 +115,7 @@ internal sealed class WslManagerMainForm : Form
             Padding = new Padding(4),
         };
         badgeRow.Controls.Add(wslRuntimeBadge);
+        badgeRow.Controls.Add(managedBadgeRow);
         monitorGroup.Controls.Add(badgeRow);
         monitorPanel.Controls.Add(monitorGroup);
 
@@ -104,15 +125,16 @@ internal sealed class WslManagerMainForm : Form
         Controls.Add(shell);
 
         wslConfigPage.DirtyStateChanged += (_, _) => UpdateTitle();
-        wslConfigPage.WslRestartCompleted = RefreshRuntimeBadgeAsync;
+        wslConfigPage.WslRestartCompleted = RefreshMonitorBadgesAsync;
         settingsPage.DirtyStateChanged += (_, _) => UpdateTitle();
+        imagesPage.ManagedImagesChanged += (_, _) => _ = RefreshMonitorBadgesAsync();
 
-        statusPollTimer.Tick += async (_, _) => await RefreshRuntimeBadgeAsync();
+        statusPollTimer.Tick += async (_, _) => await RefreshMonitorBadgesAsync();
         Shown += async (_, _) =>
         {
             wslConfigPage.SyncScrollLayoutOnShow();
             statusPollTimer.Start();
-            await RefreshRuntimeBadgeAsync();
+            await RefreshMonitorBadgesAsync();
         };
         FormClosed += (_, _) => statusPollTimer.Stop();
 
@@ -163,6 +185,7 @@ internal sealed class WslManagerMainForm : Form
     {
         wslConfigPage.ReloadOnShow();
         settingsPage.ReloadOnShow();
+        imagesPage.ReloadOnShow();
     }
 
     private void OnNavigationSelectedIndexChanged(object? sender, EventArgs e)
@@ -227,12 +250,18 @@ internal sealed class WslManagerMainForm : Form
     {
         currentPage = page;
         homePage.Visible = page == AppPage.Home;
+        imagesPage.Visible = page == AppPage.Images;
         wslConfigPage.Visible = page == AppPage.WslConfig;
         settingsPage.Visible = page == AppPage.Settings;
 
         if (page == AppPage.WslConfig)
         {
             wslConfigPage.SyncScrollLayoutOnShow();
+        }
+
+        if (page == AppPage.Images)
+        {
+            imagesPage.ReloadOnShow();
         }
 
         if (syncNavigation)
@@ -251,27 +280,50 @@ internal sealed class WslManagerMainForm : Form
 
     private static AppPage NavigationIndexToPage(int index) => index switch
     {
-        1 => AppPage.WslConfig,
-        2 => AppPage.Settings,
+        1 => AppPage.Images,
+        2 => AppPage.WslConfig,
+        3 => AppPage.Settings,
         _ => AppPage.Home,
     };
 
     private static int PageToNavigationIndex(AppPage page) => page switch
     {
-        AppPage.WslConfig => 1,
-        AppPage.Settings => 2,
+        AppPage.Images => 1,
+        AppPage.WslConfig => 2,
+        AppPage.Settings => 3,
         _ => 0,
     };
 
-    private async Task RefreshRuntimeBadgeAsync()
+    private async Task RefreshMonitorBadgesAsync()
     {
-        WslRuntimeSnapshot snapshot = await Task.Run(runtimeStatusService.GetSnapshot);
+        WslRuntimeSnapshot runtimeSnapshot = await Task.Run(runtimeStatusService.GetSnapshot);
+        IReadOnlyList<ManagedImageStatusSnapshot> managedSnapshots =
+            await managedImageStatusService.ProbeMonitoredAsync();
+
         if (IsDisposed)
         {
             return;
         }
 
-        wslRuntimeBadge.ApplySnapshot(snapshot);
+        wslRuntimeBadge.ApplySnapshot(runtimeSnapshot);
+        RebuildManagedBadges(managedSnapshots);
+        homePage.ApplyMonitoredSnapshots(managedSnapshots);
+
+        if (imagesPage.Visible)
+        {
+            await imagesPage.RefreshStatusAsync();
+        }
+    }
+
+    private void RebuildManagedBadges(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
+    {
+        managedBadgeRow.Controls.Clear();
+        foreach (ManagedImageStatusSnapshot snapshot in snapshots)
+        {
+            var badge = new ManagedImageStatusBadgeControl();
+            badge.ApplySnapshot(snapshot);
+            managedBadgeRow.Controls.Add(badge);
+        }
     }
 
     private void UpdateTitle()
