@@ -50,4 +50,40 @@ public sealed class DockerCliOutputParserTests
             0);
         Assert.Equal("Image not installed", summary);
     }
+
+    [Theory]
+    [InlineData("ghcr.io/djfariel/worldgate-runner:2026.09.04-2", "ghcr.io/djfariel/worldgate-runner:2026.09.04-2", true)]
+    [InlineData(
+        "ghcr.io/djfariel/worldgate-runner:2026.09.04-2@sha256:deadbeef",
+        "ghcr.io/djfariel/worldgate-runner:2026.09.04-2",
+        true)]
+    [InlineData("ghcr.io/other/app:1", "ghcr.io/djfariel/worldgate-runner:2026.09.04-2", false)]
+    public void ImageReferenceMatches_compares_tag_and_digest_suffix(string containerImage, string reference, bool expected)
+    {
+        Assert.Equal(expected, DockerCliOutputParser.ImageReferenceMatches(containerImage, reference));
+    }
+
+    [Fact]
+    public void ParseContainerStatesForImageReference_filters_by_image_and_counts_states()
+    {
+        const string reference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-2";
+        const string stdout = """
+            ghcr.io/djfariel/worldgate-runner:2026.09.04-2|running
+            ghcr.io/djfariel/worldgate-runner:2026.09.04-2@sha256:abc|exited
+            ghcr.io/other/workload:1|running
+            malformed-line-without-separator
+            """;
+
+        (int running, int total) = DockerCliOutputParser.ParseContainerStatesForImageReference(stdout, reference);
+        Assert.Equal(1, running);
+        Assert.Equal(2, total);
+    }
+
+    [Fact]
+    public void ListAllContainersImageAndStateArgs_avoids_reference_filter()
+    {
+        string joined = string.Join(' ', DockerCliOutputParser.ListAllContainersImageAndStateArgs);
+        Assert.Contains("docker ps -a", joined, StringComparison.Ordinal);
+        Assert.DoesNotContain("reference=", joined, StringComparison.Ordinal);
+    }
 }

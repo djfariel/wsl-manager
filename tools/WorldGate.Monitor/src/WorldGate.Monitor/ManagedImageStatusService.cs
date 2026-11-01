@@ -122,11 +122,11 @@ internal sealed class ManagedImageStatusService
                 return BuildSnapshot(entry, ManagedImagePresence.Absent, ManagedImageRuntimeState.Stopped, 0, 0, null);
             }
 
-            return ManagedImageStatusSnapshot.Unavailable(entry.Id, entry.DisplayName, detail);
+            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
         }
 
         WslCommandResult ps = await commandRunner.RunAsync(
-            new[] { "docker", "ps", "-a", "--filter", $"reference={entry.ImageReference}", "--format", "{{.State}}" },
+            DockerCliOutputParser.ListAllContainersImageAndStateArgs,
             cancellationToken).ConfigureAwait(false);
 
         if (!ps.Success)
@@ -134,10 +134,12 @@ internal sealed class ManagedImageStatusService
             string detail = !string.IsNullOrWhiteSpace(ps.StandardError)
                 ? ps.StandardError.Trim()
                 : ps.Error ?? "docker ps failed";
-            return ManagedImageStatusSnapshot.Unavailable(entry.Id, entry.DisplayName, detail);
+            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
         }
 
-        (int running, int total) = DockerCliOutputParser.ParseContainerStates(ps.StandardOutput);
+        (int running, int total) = DockerCliOutputParser.ParseContainerStatesForImageReference(
+            ps.StandardOutput,
+            entry.ImageReference);
         ManagedImageRuntimeState runtime = DockerCliOutputParser.ResolveRuntime(running, total);
         return BuildSnapshot(entry, presence, runtime, running, total, null);
     }
@@ -157,7 +159,7 @@ internal sealed class ManagedImageStatusService
             string detail = !string.IsNullOrWhiteSpace(pods.StandardError)
                 ? pods.StandardError.Trim()
                 : pods.Error ?? "kubectl get pods failed";
-            return ManagedImageStatusSnapshot.Unavailable(entry.Id, entry.DisplayName, detail);
+            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
         }
 
         if (!KubernetesPodImageParser.TrySummarizePodsUsingImage(
@@ -167,7 +169,7 @@ internal sealed class ManagedImageStatusService
                 out int total,
                 out string? parseError))
         {
-            return ManagedImageStatusSnapshot.Unavailable(entry.Id, entry.DisplayName, parseError ?? "parse failed");
+            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, parseError ?? "parse failed");
         }
 
         ManagedImagePresence presence = total > 0 ? ManagedImagePresence.Present : ManagedImagePresence.Absent;

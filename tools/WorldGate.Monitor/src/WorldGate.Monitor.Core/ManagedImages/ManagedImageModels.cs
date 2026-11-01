@@ -68,13 +68,27 @@ public sealed record ManagedImageStatusSnapshot(
             null);
 
     public static ManagedImageStatusSnapshot Unavailable(string entryId, string displayName, string error) =>
-        new(
+        ProbeFailed(entryId, displayName, error);
+
+    /// <summary>
+    /// Probe could not complete; <paramref name="diagnosticDetail"/> is for logs only.
+    /// </summary>
+    public static ManagedImageStatusSnapshot ProbeFailed(string entryId, string displayName, string? diagnosticDetail = null)
+    {
+        if (!string.IsNullOrWhiteSpace(diagnosticDetail))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Managed image probe failed ({displayName}): {diagnosticDetail.Trim()}");
+        }
+
+        return new(
             entryId,
             displayName,
             ManagedImagePresence.Unknown,
             ManagedImageRuntimeState.Unknown,
             0,
             0,
-            "Unavailable",
-            error);
+            DockerCliOutputParser.ProbeFailedSummary,
+            DockerCliOutputParser.ProbeFailedSummary);
+    }
 }
