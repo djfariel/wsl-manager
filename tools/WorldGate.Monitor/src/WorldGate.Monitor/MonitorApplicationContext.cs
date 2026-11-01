@@ -22,6 +22,8 @@ internal sealed class MonitorApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem openRunItem;
     private Icon currentIcon;
     private MonitorSnapshot? currentSnapshot;
+    private WslManagerMainForm? mainForm;
+    private readonly WslLifecycleService wslLifecycle = new();
     private bool disposed;
 
     public MonitorApplicationContext(
@@ -39,6 +41,8 @@ internal sealed class MonitorApplicationContext : ApplicationContext
         arcItem = new ToolStripMenuItem("ARC: checking") { Enabled = false };
         runnerItem = new ToolStripMenuItem("Runners: checking") { Enabled = false };
         openRunItem = new ToolStripMenuItem("Open GitHub Run", null, (_, _) => OpenCurrentRun()) { Enabled = false };
+        var openManagerItem = new ToolStripMenuItem("Open WSL Manager", null, (_, _) => ShowWslManager());
+        var restartWslItem = new ToolStripMenuItem("Restart WSL", null, (_, _) => RestartWslFromTray());
         var refreshItem = new ToolStripMenuItem("Refresh Now", null, async (_, _) => await RefreshAsync());
         var testNotificationItem = new ToolStripMenuItem("Test Notification", null, (_, _) => TestNotification());
         var configurationItem = new ToolStripMenuItem("Open Configuration", null, (_, _) => OpenConfiguration());
@@ -51,6 +55,9 @@ internal sealed class MonitorApplicationContext : ApplicationContext
             jobItem,
             arcItem,
             runnerItem,
+            new ToolStripSeparator(),
+            openManagerItem,
+            restartWslItem,
             new ToolStripSeparator(),
             openRunItem,
             refreshItem,
@@ -68,6 +75,7 @@ internal sealed class MonitorApplicationContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
+        trayIcon.MouseClick += OnTrayMouseClick;
 
         pollTimer = new System.Windows.Forms.Timer
         {
@@ -196,6 +204,50 @@ internal sealed class MonitorApplicationContext : ApplicationContext
         TryStart(new ProcessStartInfo(job.RunUrl) { UseShellExecute = true });
     }
 
+    private void OnTrayMouseClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            ShowWslManager();
+        }
+    }
+
+    private void ShowWslManager()
+    {
+        if (mainForm is { IsDisposed: false })
+        {
+            mainForm.Show();
+            mainForm.WindowState = FormWindowState.Normal;
+            mainForm.BringToFront();
+            mainForm.Activate();
+            return;
+        }
+
+        mainForm = new WslManagerMainForm();
+        mainForm.FormClosed += (_, _) => mainForm = null;
+        mainForm.Show();
+    }
+
+    private void RestartWslFromTray()
+    {
+        WslShutdownResult result = wslLifecycle.TryShutdown();
+        if (!result.Succeeded)
+        {
+            MessageBox.Show(
+                result.Error ?? "WSL shutdown failed.",
+                "Restart WSL",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        MessageBox.Show(
+            "WSL has been shut down. It will start again the next time you launch a distribution.",
+            "Restart WSL",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
     private void OpenConfiguration()
     {
         var startInfo = new ProcessStartInfo("notepad.exe") { UseShellExecute = false };
@@ -243,8 +295,11 @@ internal sealed class MonitorApplicationContext : ApplicationContext
         pollTimer.Stop();
         pollTimer.Dispose();
         shutdown.Cancel();
+        trayIcon.MouseClick -= OnTrayMouseClick;
         trayIcon.Visible = false;
         trayIcon.Dispose();
+        mainForm?.Close();
+        mainForm = null;
         currentIcon.Dispose();
         menu.Dispose();
     }

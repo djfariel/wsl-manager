@@ -37,6 +37,10 @@ Open `wsl-manager.sln` at the repository root in Visual Studio or Rider for all 
 
 See `tools/WorldGate.Monitor/README.md` for `install.ps1`, configuration, and tray acceptance (poll GitHub Actions / ARC via WSL).
 
+## WSL Manager window
+
+Left-click the tray icon (or choose **Open WSL Manager** from the menu) to edit `%USERPROFILE%\.wslconfig` with labeled fields for common `[wsl2]` settings. **Save .wslconfig** validates and writes atomically; you are prompted to run **Restart WSL** (`wsl --shutdown`) when settings need a full shutdown. **Restart WSL** is also available from the tray menu.
+
 ## CI
 
 Pull requests that touch Monitor paths run [.github/workflows/monitor-verify.yml](../.github/workflows/monitor-verify.yml): layout verification, core tests, and Windows-targeting build. The workflow does not run on every push or on draft PR sync commits; use **Run workflow** for manual verification.
