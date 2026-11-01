@@ -75,7 +75,9 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         }
 
         stack.PerformLayout();
-        Height = stack.PreferredSize.Height + Padding.Vertical;
+        int contentHeight = stack.PreferredSize.Height + Padding.Vertical;
+        Height = Math.Max(contentHeight, 28);
+        MinimumSize = new Size(Width, Height);
     }
 
     public void ApplySnapshot(ManagedImageStatusSnapshot snapshot)

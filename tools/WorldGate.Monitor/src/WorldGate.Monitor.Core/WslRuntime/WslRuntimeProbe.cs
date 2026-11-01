@@ -56,29 +56,17 @@ public static class WslRuntimeProbe
             return [];
         }
 
+        string normalized = stdout.Trim().TrimStart('\uFEFF');
         var distros = new List<string>();
-        foreach (string rawLine in stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        foreach (string rawLine in normalized.Split(['\r', '\n', '\0'], StringSplitOptions.RemoveEmptyEntries))
         {
             string line = rawLine.Trim();
-            if (line.Length == 0)
+            if (line.Length == 0 || IsRunningListHeaderLine(line))
             {
                 continue;
             }
 
-            if (line.Contains("Windows Subsystem", StringComparison.OrdinalIgnoreCase)
-                || line.Contains("Subsystem for Linux", StringComparison.OrdinalIgnoreCase)
-                || line.StartsWith("WSL", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            string name = line;
-            int paren = line.IndexOf('(');
-            if (paren > 0)
-            {
-                name = line[..paren].Trim();
-            }
-
+            string name = StripDefaultSuffix(line);
             if (name.Length > 0)
             {
                 distros.Add(name);
@@ -86,6 +74,24 @@ public static class WslRuntimeProbe
         }
 
         return distros;
+    }
+
+    private static bool IsRunningListHeaderLine(string line) =>
+        line.Contains("Windows Subsystem", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Subsystem for Linux", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Distributions:", StringComparison.OrdinalIgnoreCase)
+        || line.StartsWith("WSL", StringComparison.OrdinalIgnoreCase);
+
+    private static string StripDefaultSuffix(string line)
+    {
+        string name = line;
+        int paren = line.IndexOf('(');
+        if (paren > 0)
+        {
+            name = line[..paren].Trim();
+        }
+
+        return name;
     }
 
     public static WslRuntimeSnapshot WithRunningDistros(WslRuntimeSnapshot snapshot, string? listRunningStdout)

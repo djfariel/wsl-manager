@@ -22,7 +22,15 @@ internal sealed class WslManagerMainForm : Form
     private readonly ConfigurationStore configurationStore = new();
     private readonly WslRuntimeStatusService runtimeStatusService = new();
     private readonly ManagedImageStatusService managedImageStatusService;
-    private readonly StatusBadgeControl wslRuntimeBadge = new();
+    private readonly FlowLayoutPanel wslRuntimeBadgeRow = new()
+    {
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        FlowDirection = FlowDirection.TopDown,
+        WrapContents = false,
+        Padding = Padding.Empty,
+        Margin = Padding.Empty,
+    };
     private readonly FlowLayoutPanel managedBadgeRow = new()
     {
         AutoSize = true,
@@ -77,8 +85,6 @@ internal sealed class WslManagerMainForm : Form
         ClientSize = new Size(980, 640);
         Font = new Font("Segoe UI", 9F);
 
-        wslRuntimeBadge.SetCaption("WSL runtime");
-
         var shell = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -118,7 +124,7 @@ internal sealed class WslManagerMainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(8, 4, 8, 8),
         };
-        monitorBadgeStack.Controls.Add(wslRuntimeBadge);
+        monitorBadgeStack.Controls.Add(wslRuntimeBadgeRow);
         monitorBadgeStack.Controls.Add(managedBadgeRow);
         monitorBadgeScrollHost.Controls.Add(monitorBadgeStack);
         monitorBadgeScrollHost.Resize += (_, _) => SyncMonitorBadgeColumnWidth();
@@ -314,7 +320,7 @@ internal sealed class WslManagerMainForm : Form
             return;
         }
 
-        wslRuntimeBadge.ApplySnapshot(runtimeSnapshot);
+        RebuildWslRuntimeBadges(runtimeSnapshot);
         RebuildManagedBadges(managedSnapshots);
         homePage.ApplyMonitoredSnapshots(managedSnapshots);
 
@@ -322,6 +328,36 @@ internal sealed class WslManagerMainForm : Form
         {
             await imagesPage.RefreshStatusAsync();
         }
+    }
+
+    private void RebuildWslRuntimeBadges(WslRuntimeSnapshot snapshot)
+    {
+        int contentWidth = GetMonitorBadgeContentWidth();
+        wslRuntimeBadgeRow.Controls.Clear();
+
+        if (snapshot.State == WslRuntimeState.Running
+            && snapshot.RunningDistributions is { Count: > 1 } distros)
+        {
+            foreach (string distro in distros)
+            {
+                AddWslRuntimeBadge(contentWidth, $"WSL runtime — {distro}", WslRuntimeSnapshot.Running([distro]));
+            }
+        }
+        else
+        {
+            AddWslRuntimeBadge(contentWidth, "WSL runtime", snapshot);
+        }
+
+        SyncMonitorBadgeColumnWidth();
+    }
+
+    private void AddWslRuntimeBadge(int contentWidth, string caption, WslRuntimeSnapshot snapshot)
+    {
+        var badge = new StatusBadgeControl();
+        badge.SetCaption(caption);
+        badge.ApplySnapshot(snapshot);
+        MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
+        wslRuntimeBadgeRow.Controls.Add(badge);
     }
 
     private void RebuildManagedBadges(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
@@ -336,7 +372,6 @@ internal sealed class WslManagerMainForm : Form
             managedBadgeRow.Controls.Add(badge);
         }
 
-        MonitorBadgeLayout.ConstrainBadgeWidth(wslRuntimeBadge, contentWidth);
         SyncMonitorBadgeColumnWidth();
     }
 
@@ -363,7 +398,11 @@ internal sealed class WslManagerMainForm : Form
         monitorBadgeStack.Width = stackWidth;
         monitorBadgeStack.MaximumSize = new Size(stackWidth, 0);
         int contentWidth = MonitorBadgeLayout.BadgeContentWidth(stackWidth);
-        MonitorBadgeLayout.ConstrainBadgeWidth(wslRuntimeBadge, contentWidth);
+        foreach (Control control in wslRuntimeBadgeRow.Controls)
+        {
+            MonitorBadgeLayout.ConstrainBadgeWidth(control, contentWidth);
+        }
+
         foreach (Control control in managedBadgeRow.Controls)
         {
             MonitorBadgeLayout.ConstrainBadgeWidth(control, contentWidth);

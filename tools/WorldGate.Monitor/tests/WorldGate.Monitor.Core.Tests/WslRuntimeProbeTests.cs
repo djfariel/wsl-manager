@@ -39,6 +39,33 @@ public sealed class WslRuntimeProbeTests
     }
 
     [Fact]
+    public void ParseRunningDistributionList_matchesActualWindowsRunningOutput()
+    {
+        const string stdout = "Windows Subsystem for Linux Distributions:\r\nUbuntu (Default)\r\n";
+
+        IReadOnlyList<string> names = WslRuntimeProbe.ParseRunningDistributionList(stdout);
+
+        Assert.Single(names);
+        Assert.Equal("Ubuntu", names[0]);
+    }
+
+    [Fact]
+    public void ParseRunningDistributionList_ignoresBlankLinesAndDefaultSuffixOnly()
+    {
+        const string stdout = """
+            Windows Subsystem for Linux Distributions:
+
+            Ubuntu (Default)
+
+            """;
+
+        IReadOnlyList<string> names = WslRuntimeProbe.ParseRunningDistributionList(stdout);
+
+        Assert.Single(names);
+        Assert.Equal("Ubuntu", names[0]);
+    }
+
+    [Fact]
     public void ParseRunningDistributionListReturnsEmptyForBlankOutput()
     {
         Assert.Empty(WslRuntimeProbe.ParseRunningDistributionList(null));

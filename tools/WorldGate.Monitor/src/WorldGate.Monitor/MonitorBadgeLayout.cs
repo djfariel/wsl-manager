@@ -13,7 +13,7 @@ internal static class MonitorBadgeLayout
     {
         int totalWidth = contentWidth + badge.Padding.Horizontal;
         badge.AutoSize = false;
-        badge.Dock = DockStyle.Top;
+        badge.Dock = DockStyle.None;
         badge.Width = totalWidth;
         badge.MaximumSize = new Size(totalWidth, 0);
 

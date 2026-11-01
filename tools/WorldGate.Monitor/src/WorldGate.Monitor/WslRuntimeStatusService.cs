@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using WorldGate.Monitor.Core.WslRuntime;
 
 namespace WorldGate.Monitor;
@@ -29,6 +30,8 @@ internal sealed class WslRuntimeStatusService
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.Unicode,
+                StandardErrorEncoding = Encoding.Unicode,
             }) ?? throw new InvalidOperationException("Failed to start wsl.exe.");
 
             string stdout = process.StandardOutput.ReadToEnd();
