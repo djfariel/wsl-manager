@@ -216,6 +216,7 @@ internal sealed class MonitorApplicationContext : ApplicationContext
     {
         if (mainForm is { IsDisposed: false })
         {
+            mainForm.ReloadOnShow();
             mainForm.Show();
             mainForm.WindowState = FormWindowState.Normal;
             mainForm.BringToFront();

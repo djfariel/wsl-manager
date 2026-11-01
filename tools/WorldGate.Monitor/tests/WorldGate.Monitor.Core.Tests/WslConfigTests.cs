@@ -55,6 +55,40 @@ public sealed class WslConfigTests
     }
 
     [Fact]
+    public void ParseNormalizesBooleanCasingForStableBaseline()
+    {
+        const string input = """
+        [wsl2]
+        localhostForwarding=True
+        nestedVirtualization=FALSE
+        """;
+
+        WslConfigParseResult parsed = WslConfigIniSerializer.TryParse(input);
+        Assert.True(parsed.Succeeded, parsed.Error);
+        Assert.Equal("true", parsed.Document!.LocalhostForwarding);
+        Assert.Equal("false", parsed.Document.NestedVirtualization);
+
+        string baseline = WslConfigIniSerializer.Serialize(parsed.Document);
+        WslConfigParseResult reparsed = WslConfigIniSerializer.TryParse(baseline);
+        Assert.True(reparsed.Succeeded, reparsed.Error);
+        Assert.Equal("true", reparsed.Document!.LocalhostForwarding);
+        Assert.Equal("false", reparsed.Document.NestedVirtualization);
+    }
+
+    [Fact]
+    public void ParseNormalizesAutoMemoryReclaimCasing()
+    {
+        const string input = """
+        [wsl2]
+        autoMemoryReclaim=GRADUAL
+        """;
+
+        WslConfigParseResult parsed = WslConfigIniSerializer.TryParse(input);
+        Assert.True(parsed.Succeeded, parsed.Error);
+        Assert.Equal("gradual", parsed.Document!.AutoMemoryReclaim);
+    }
+
+    [Fact]
     public void FileServiceSavesAtomicallyAndReloads()
     {
         string tempDir = Path.Combine(Path.GetTempPath(), "wsl-manager-tests", Guid.NewGuid().ToString("N"));

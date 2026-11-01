@@ -75,8 +75,31 @@ public sealed class WslConfigDocument
         _ => null,
     };
 
+    private static readonly HashSet<string> BooleanKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "localhostForwarding",
+        "nestedVirtualization",
+        "debugConsole",
+        "safeMode",
+        "guiApplications",
+        "pageReporting",
+        "sparseVhd",
+        "dnsTunneling",
+        "firewall",
+        "autoProxy",
+    };
+
     public void SetKnown(string key, string? value)
     {
+        if (BooleanKeys.Contains(key))
+        {
+            value = NormalizeBoolean(value);
+        }
+        else if (key.Equals("autoMemoryReclaim", StringComparison.OrdinalIgnoreCase))
+        {
+            value = NormalizeAutoMemoryReclaim(value);
+        }
+
         switch (key.ToLowerInvariant())
         {
             case "memory": Memory = value; break;
@@ -151,5 +174,45 @@ public sealed class WslConfigDocument
         }
 
         return clone;
+    }
+
+    internal static string? NormalizeBoolean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            return "true";
+        }
+
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return "false";
+        }
+
+        return value.Trim();
+    }
+
+    internal static string? NormalizeAutoMemoryReclaim(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return "disabled";
+        }
+
+        if (value.Equals("gradual", StringComparison.OrdinalIgnoreCase))
+        {
+            return "gradual";
+        }
+
+        return value.Trim();
     }
 }

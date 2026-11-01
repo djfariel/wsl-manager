@@ -74,6 +74,8 @@ See `tools/WorldGate.Monitor/README.md` for `install.ps1`, configuration, and tr
 
 Left-click the tray icon (or choose **Open WSL Manager** from the menu) to edit `%USERPROFILE%\.wslconfig`. The home window has a **Monitor** section (WSL runtime badge, polled every few seconds without starting WSL when the VM is off), a scrollable **WSL configuration** section with `?` help on each field, and **Actions** (**Save .wslconfig**, **Restart WSL**, **Reload**). **Save .wslconfig** validates and writes atomically; you are prompted to run **Restart WSL** (`wsl --shutdown`) when settings need a full shutdown. **Restart WSL** is also available from the tray menu.
 
+Opening the window (tray left-click or **Open WSL Manager**) reloads `.wslconfig` from disk when the form has no unsaved edits; a discard prompt appears only after you change a field or use **Reload** while dirty. Manual check: open WSL Manager twice with no edits (no prompt); change **memory**, click **Reload** (prompt); save or reload to clear dirty state.
+
 ## CI
 
 Pull requests that touch Monitor paths run [.github/workflows/monitor-verify.yml](../.github/workflows/monitor-verify.yml): layout verification, core tests, and Windows-targeting build. The workflow does not run on every push or on draft PR sync commits; use **Run workflow** for manual verification.

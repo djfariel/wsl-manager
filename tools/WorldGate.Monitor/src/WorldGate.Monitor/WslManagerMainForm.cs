@@ -364,9 +364,24 @@ internal sealed class WslManagerMainForm : Form
 
     private bool IsDirty()
     {
+        if (savedBaseline is null)
+        {
+            return false;
+        }
+
         ApplyControlsToDocument();
         string current = WslConfigIniSerializer.Serialize(workingCopy);
-        return savedBaseline is null || !string.Equals(current, savedBaseline, StringComparison.Ordinal);
+        return !string.Equals(current, savedBaseline, StringComparison.Ordinal);
+    }
+
+    internal void ReloadOnShow()
+    {
+        if (IsDirty())
+        {
+            return;
+        }
+
+        ReloadFromDisk();
     }
 
     private void UpdateTitle()
