@@ -3,9 +3,12 @@
   Build and launch WorldGate.Monitor (WSL Manager tray app) for local dev iteration.
 
 .DESCRIPTION
-  Runs from the repository root (via $PSScriptRoot). Uses `dotnet run` on the WinForms
-  project with Release + EnableWindowsTargeting so you get a fast rebuild-and-run loop
-  without a separate publish step. The tray app starts in a new process and this script exits.
+  Standard post-change launch path: after review-ready UI or tray work, run this script
+  from the repository root (stop any existing WorldGateMonitor tray first to avoid duplicates).
+
+  Runs via $PSScriptRoot. Uses `dotnet run` on the WinForms project with Release +
+  EnableWindowsTargeting so you get a fast rebuild-and-run loop without a separate publish
+  step. The tray app starts in a new process and this script exits.
 
 .PARAMETER NoBuild
   Skip `dotnet build` and launch immediately (still uses `dotnet run`, which builds if needed

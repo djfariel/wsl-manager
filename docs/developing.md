@@ -39,6 +39,29 @@ From the repository root, build and start the WSL Manager tray app in a separate
 
 Use `-NoBuild` to skip the explicit build step (requires a recent Release build; `dotnet run --no-build` is used).
 
+## After UI changes
+
+When tray or WSL Manager window changes are ready for review:
+
+1. Stop any running tray instance (`WorldGateMonitor.exe`) so you do not get duplicate icons.
+2. From the repository root, run:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1
+```
+
+If you already built Release with Windows targeting and only need a relaunch, use `-NoBuild`:
+
+```powershell
+./scripts/Run-WslManagerDev.ps1 -NoBuild
+```
+
+Or use the restart helper (stop tray, then build and launch):
+
+```powershell
+./scripts/Restart-WslManagerDev.ps1
+```
+
 ## Solution file
 
 Open `wsl-manager.sln` at the repository root in Visual Studio or Rider for all Monitor projects.
