@@ -24,22 +24,24 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
 
     public ManagedImageStatusBadgeControl()
     {
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        AutoSize = false;
         Padding = new Padding(10, 6, 10, 6);
-        Margin = new Padding(0, 0, 8, 8);
+        Margin = new Padding(0, 0, 0, 8);
         BorderStyle = BorderStyle.FixedSingle;
 
-        var stack = new FlowLayoutPanel
+        var stack = new TableLayoutPanel
         {
             AutoSize = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Dock = DockStyle.Top,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
         };
-        stack.Controls.Add(captionLabel);
-        stack.Controls.Add(valueLabel);
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        stack.Controls.Add(captionLabel, 0, 0);
+        stack.Controls.Add(valueLabel, 0, 1);
         Controls.Add(stack);
 
         var menu = new ContextMenuStrip();
@@ -60,6 +62,20 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         valueLabel.MaximumSize = new Size(inner, 0);
         captionLabel.AutoEllipsis = true;
         valueLabel.AutoEllipsis = true;
+        captionLabel.Width = inner;
+        valueLabel.Width = inner;
+        SyncHeightFromContent();
+    }
+
+    private void SyncHeightFromContent()
+    {
+        if (Controls.Count == 0 || Controls[0] is not Control stack)
+        {
+            return;
+        }
+
+        stack.PerformLayout();
+        Height = stack.PreferredSize.Height + Padding.Vertical;
     }
 
     public void ApplySnapshot(ManagedImageStatusSnapshot snapshot)
@@ -77,6 +93,7 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         probeToolTip.SetToolTip(captionLabel, toolTipText);
         probeToolTip.SetToolTip(valueLabel, toolTipText);
         ContextMenuStrip!.Items[0].Enabled = !string.IsNullOrWhiteSpace(lastDiagnosticDetail);
+        SyncHeightFromContent();
 
         if (!string.IsNullOrWhiteSpace(snapshot.ErrorMessage))
         {

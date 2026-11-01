@@ -359,12 +359,9 @@ internal sealed class WslManagerMainForm : Form
         }
 
         int stackWidth = monitorBadgeScrollHost.ClientSize.Width;
-        if (monitorBadgeScrollHost.AutoScrollMinSize.Width > stackWidth)
-        {
-            stackWidth = monitorBadgeScrollHost.AutoScrollMinSize.Width;
-        }
 
         monitorBadgeStack.Width = stackWidth;
+        monitorBadgeStack.MaximumSize = new Size(stackWidth, 0);
         int contentWidth = MonitorBadgeLayout.BadgeContentWidth(stackWidth);
         MonitorBadgeLayout.ConstrainBadgeWidth(wslRuntimeBadge, contentWidth);
         foreach (Control control in managedBadgeRow.Controls)

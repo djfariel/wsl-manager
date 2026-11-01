@@ -11,7 +11,11 @@ internal static class MonitorBadgeLayout
 
     public static void ConstrainBadgeWidth(Control badge, int contentWidth)
     {
-        badge.Width = contentWidth + badge.Padding.Horizontal;
+        int totalWidth = contentWidth + badge.Padding.Horizontal;
+        badge.AutoSize = false;
+        badge.Dock = DockStyle.Top;
+        badge.Width = totalWidth;
+        badge.MaximumSize = new Size(totalWidth, 0);
 
         if (badge is ManagedImageStatusBadgeControl managedBadge)
         {
@@ -21,5 +25,7 @@ internal static class MonitorBadgeLayout
         {
             runtimeBadge.SetContentWidth(contentWidth);
         }
+
+        badge.PerformLayout();
     }
 }

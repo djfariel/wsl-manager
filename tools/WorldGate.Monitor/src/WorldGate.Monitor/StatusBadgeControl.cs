@@ -6,6 +6,8 @@ namespace WorldGate.Monitor;
 
 internal sealed class StatusBadgeControl : Panel
 {
+    private readonly ToolTip runtimeToolTip = new();
+
     private readonly Label captionLabel = new()
     {
         AutoSize = true,
@@ -21,22 +23,24 @@ internal sealed class StatusBadgeControl : Panel
 
     public StatusBadgeControl()
     {
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        AutoSize = false;
         Padding = new Padding(10, 6, 10, 6);
-        Margin = new Padding(0, 0, 8, 8);
+        Margin = new Padding(0, 0, 0, 8);
         BorderStyle = BorderStyle.FixedSingle;
 
-        var stack = new FlowLayoutPanel
+        var stack = new TableLayoutPanel
         {
             AutoSize = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Dock = DockStyle.Top,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
         };
-        stack.Controls.Add(captionLabel);
-        stack.Controls.Add(valueLabel);
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        stack.Controls.Add(captionLabel, 0, 0);
+        stack.Controls.Add(valueLabel, 0, 1);
         Controls.Add(stack);
     }
 
@@ -49,6 +53,20 @@ internal sealed class StatusBadgeControl : Panel
         valueLabel.MaximumSize = new Size(inner, 0);
         captionLabel.AutoEllipsis = true;
         valueLabel.AutoEllipsis = true;
+        captionLabel.Width = inner;
+        valueLabel.Width = inner;
+        SyncHeightFromContent();
+    }
+
+    private void SyncHeightFromContent()
+    {
+        if (Controls.Count == 0 || Controls[0] is not Control stack)
+        {
+            return;
+        }
+
+        stack.PerformLayout();
+        Height = stack.PreferredSize.Height + Padding.Vertical;
     }
 
     public void ApplySnapshot(WslRuntimeSnapshot snapshot)
@@ -76,6 +94,38 @@ internal sealed class StatusBadgeControl : Panel
 
         captionLabel.ForeColor = ForeColor;
         valueLabel.ForeColor = ForeColor;
+
+        string toolTip = BuildToolTip(snapshot);
+        runtimeToolTip.SetToolTip(this, toolTip);
+        runtimeToolTip.SetToolTip(captionLabel, toolTip);
+        runtimeToolTip.SetToolTip(valueLabel, toolTip);
+        SyncHeightFromContent();
+    }
+
+    private static string BuildToolTip(WslRuntimeSnapshot snapshot)
+    {
+        return snapshot.State switch
+        {
+            WslRuntimeState.Running => BuildRunningToolTip(snapshot),
+            WslRuntimeState.Stopped =>
+                "WSL utility VM is not running (no vmmem / vmmemWSL process). Stopped distributions do not count toward this badge.",
+            _ => string.IsNullOrWhiteSpace(snapshot.ErrorMessage)
+                ? "Could not determine WSL runtime status."
+                : snapshot.ErrorMessage,
+        };
+    }
+
+    private static string BuildRunningToolTip(WslRuntimeSnapshot snapshot)
+    {
+        if (snapshot.RunningDistributions is { Count: > 0 } distros)
+        {
+            string names = string.Join(Environment.NewLine, distros.Select(d => "• " + d));
+            return distros.Count == 1
+                ? $"WSL utility VM is running. One distribution is running (from wsl --list --running):{Environment.NewLine}{names}"
+                : $"WSL utility VM is running. {distros.Count} distributions are running (from wsl --list --running):{Environment.NewLine}{names}";
+        }
+
+        return "WSL utility VM is running (vmmem process present). wsl --list --running reported no distributions — the VM may be idle or the list command failed.";
     }
 
     private static string FormatRunningDetail(WslRuntimeSnapshot snapshot)
@@ -83,10 +133,10 @@ internal sealed class StatusBadgeControl : Panel
         if (snapshot.RunningDistributions is { Count: > 0 } distros)
         {
             return distros.Count == 1
-                ? $"On — {distros[0]}"
-                : $"On — {distros.Count} distros";
+                ? $"On — {distros[0]} running"
+                : $"On — {distros.Count} distributions running";
         }
 
-        return "On — utility VM active";
+        return "On — VM up, no distros running";
     }
 }

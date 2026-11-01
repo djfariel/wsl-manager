@@ -76,6 +76,8 @@ internal sealed class HomePageControl : UserControl
             MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
             monitoredPanel.Controls.Add(badge);
         }
+
+        SyncMonitoredBadgeWidths();
     }
 
     private int GetMonitoredBadgeContentWidth()
@@ -91,6 +93,15 @@ internal sealed class HomePageControl : UserControl
 
     private void SyncMonitoredBadgeWidths()
     {
+        if (monitoredScrollHost.ClientSize.Width <= 0)
+        {
+            return;
+        }
+
+        int stackWidth = monitoredScrollHost.ClientSize.Width;
+        monitoredPanel.Width = stackWidth;
+        monitoredPanel.MaximumSize = new Size(stackWidth, 0);
+
         int contentWidth = GetMonitoredBadgeContentWidth();
         foreach (Control control in monitoredPanel.Controls)
         {
