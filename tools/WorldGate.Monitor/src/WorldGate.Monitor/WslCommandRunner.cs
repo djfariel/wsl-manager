@@ -42,7 +42,9 @@ internal sealed class WslCommandRunner
             startInfo.ArgumentList.Add(distribution);
         }
 
-        startInfo.ArgumentList.Add("--");
+        // --exec runs the Linux binary directly; default wsl invocation uses a shell and
+        // splits metacharacters in docker --format templates (e.g. "|" in {{.Image}}|{{.State}}).
+        startInfo.ArgumentList.Add("--exec");
         foreach (string argument in commandArguments)
         {
             startInfo.ArgumentList.Add(argument);

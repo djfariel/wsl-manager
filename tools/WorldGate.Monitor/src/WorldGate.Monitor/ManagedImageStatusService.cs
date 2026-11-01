@@ -114,15 +114,23 @@ internal sealed class ManagedImageStatusService
 
         if (presence == ManagedImagePresence.Absent && !inspect.Success)
         {
-            string detail = !string.IsNullOrWhiteSpace(inspect.StandardError)
-                ? inspect.StandardError.Trim()
-                : inspect.Error ?? "docker image inspect failed";
+            string detail = ManagedImageProbeDiagnostics.SummarizeCommandFailure(inspect.StandardError, inspect.Error);
             if (detail.Contains("No such image", StringComparison.OrdinalIgnoreCase))
             {
-                return BuildSnapshot(entry, ManagedImagePresence.Absent, ManagedImageRuntimeState.Stopped, 0, 0, null);
+                string probeDetail = ManagedImageProbeDiagnostics.FormatDockerProbeDetail(
+                    inspectOk: false,
+                    psOk: false,
+                    ManagedImagePresence.Absent,
+                    0,
+                    0,
+                    "docker image inspect: image not installed");
+                return BuildSnapshot(entry, ManagedImagePresence.Absent, ManagedImageRuntimeState.Stopped, 0, 0, null, probeDetail);
             }
 
-            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
+            return ManagedImageStatusSnapshot.ProbeFailed(
+                entry.Id,
+                entry.DisplayName,
+                $"docker image inspect failed: {detail}");
         }
 
         WslCommandResult ps = await commandRunner.RunAsync(
@@ -131,17 +139,24 @@ internal sealed class ManagedImageStatusService
 
         if (!ps.Success)
         {
-            string detail = !string.IsNullOrWhiteSpace(ps.StandardError)
-                ? ps.StandardError.Trim()
-                : ps.Error ?? "docker ps failed";
-            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
+            string detail = ManagedImageProbeDiagnostics.SummarizeCommandFailure(ps.StandardError, ps.Error);
+            return ManagedImageStatusSnapshot.ProbeFailed(
+                entry.Id,
+                entry.DisplayName,
+                $"docker ps failed: {detail}");
         }
 
         (int running, int total) = DockerCliOutputParser.ParseContainerStatesForImageReference(
             ps.StandardOutput,
             entry.ImageReference);
         ManagedImageRuntimeState runtime = DockerCliOutputParser.ResolveRuntime(running, total);
-        return BuildSnapshot(entry, presence, runtime, running, total, null);
+        string successDetail = ManagedImageProbeDiagnostics.FormatDockerProbeDetail(
+            inspectOk: true,
+            psOk: true,
+            presence,
+            running,
+            total);
+        return BuildSnapshot(entry, presence, runtime, running, total, null, successDetail);
     }
 
     private static async Task<ManagedImageStatusSnapshot> ProbeKubernetesAsync(
@@ -156,10 +171,11 @@ internal sealed class ManagedImageStatusService
 
         if (!pods.Success)
         {
-            string detail = !string.IsNullOrWhiteSpace(pods.StandardError)
-                ? pods.StandardError.Trim()
-                : pods.Error ?? "kubectl get pods failed";
-            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, detail);
+            string detail = ManagedImageProbeDiagnostics.SummarizeCommandFailure(pods.StandardError, pods.Error);
+            return ManagedImageStatusSnapshot.ProbeFailed(
+                entry.Id,
+                entry.DisplayName,
+                $"kubectl get pods failed: {detail}");
         }
 
         if (!KubernetesPodImageParser.TrySummarizePodsUsingImage(
@@ -169,12 +185,16 @@ internal sealed class ManagedImageStatusService
                 out int total,
                 out string? parseError))
         {
-            return ManagedImageStatusSnapshot.ProbeFailed(entry.Id, entry.DisplayName, parseError ?? "parse failed");
+            return ManagedImageStatusSnapshot.ProbeFailed(
+                entry.Id,
+                entry.DisplayName,
+                $"kubectl parse failed: {parseError ?? "parse failed"}");
         }
 
         ManagedImagePresence presence = total > 0 ? ManagedImagePresence.Present : ManagedImagePresence.Absent;
         ManagedImageRuntimeState runtime = DockerCliOutputParser.ResolveRuntime(running, total);
-        return BuildSnapshot(entry, presence, runtime, running, total, null);
+        string successDetail = ManagedImageProbeDiagnostics.FormatKubernetesProbeDetail(true, running, total);
+        return BuildSnapshot(entry, presence, runtime, running, total, null, successDetail);
     }
 
     private static ManagedImageStatusSnapshot BuildSnapshot(
@@ -183,7 +203,8 @@ internal sealed class ManagedImageStatusService
         ManagedImageRuntimeState runtime,
         int running,
         int total,
-        string? error)
+        string? error,
+        string? probeDiagnosticDetail = null)
     {
         string summary = DockerCliOutputParser.FormatSummary(presence, runtime, running, total);
         return new ManagedImageStatusSnapshot(
@@ -194,6 +215,7 @@ internal sealed class ManagedImageStatusService
             running,
             total,
             summary,
-            error);
+            error,
+            probeDiagnosticDetail);
     }
 }

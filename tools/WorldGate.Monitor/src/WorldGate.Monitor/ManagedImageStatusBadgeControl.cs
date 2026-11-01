@@ -6,6 +6,9 @@ namespace WorldGate.Monitor;
 
 internal sealed class ManagedImageStatusBadgeControl : Panel
 {
+    private readonly ToolTip probeToolTip = new();
+    private string? lastDiagnosticDetail;
+
     private readonly Label captionLabel = new()
     {
         AutoSize = true,
@@ -38,6 +41,16 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         stack.Controls.Add(captionLabel);
         stack.Controls.Add(valueLabel);
         Controls.Add(stack);
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Copy probe detail", null, (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(lastDiagnosticDetail))
+            {
+                Clipboard.SetText(lastDiagnosticDetail);
+            }
+        });
+        ContextMenuStrip = menu;
     }
 
     public void ApplySnapshot(ManagedImageStatusSnapshot snapshot)
@@ -46,6 +59,15 @@ internal sealed class ManagedImageStatusBadgeControl : Panel
         valueLabel.Text = string.IsNullOrWhiteSpace(snapshot.ErrorMessage)
             ? snapshot.Summary
             : snapshot.ErrorMessage;
+
+        lastDiagnosticDetail = snapshot.ProbeDiagnosticDetail;
+        string toolTipText = !string.IsNullOrWhiteSpace(snapshot.ProbeDiagnosticDetail)
+            ? snapshot.ProbeDiagnosticDetail
+            : snapshot.Summary;
+        probeToolTip.SetToolTip(this, toolTipText);
+        probeToolTip.SetToolTip(captionLabel, toolTipText);
+        probeToolTip.SetToolTip(valueLabel, toolTipText);
+        ContextMenuStrip!.Items[0].Enabled = !string.IsNullOrWhiteSpace(lastDiagnosticDetail);
 
         if (!string.IsNullOrWhiteSpace(snapshot.ErrorMessage))
         {

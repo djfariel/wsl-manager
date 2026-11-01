@@ -54,7 +54,8 @@ public sealed record ManagedImageStatusSnapshot(
     int RunningContainerCount,
     int TotalContainerCount,
     string Summary,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    string? ProbeDiagnosticDetail = null)
 {
     public static ManagedImageStatusSnapshot WslOff(string entryId, string displayName) =>
         new(
@@ -75,10 +76,11 @@ public sealed record ManagedImageStatusSnapshot(
     /// </summary>
     public static ManagedImageStatusSnapshot ProbeFailed(string entryId, string displayName, string? diagnosticDetail = null)
     {
-        if (!string.IsNullOrWhiteSpace(diagnosticDetail))
+        string? detail = string.IsNullOrWhiteSpace(diagnosticDetail) ? null : diagnosticDetail.Trim();
+        if (detail is not null)
         {
-            System.Diagnostics.Debug.WriteLine(
-                $"Managed image probe failed ({displayName}): {diagnosticDetail.Trim()}");
+            System.Diagnostics.Debug.WriteLine($"Managed image probe failed ({displayName}): {detail}");
+            ManagedImageProbeDiagnostics.AppendLogLine(displayName, detail);
         }
 
         return new(
@@ -89,6 +91,7 @@ public sealed record ManagedImageStatusSnapshot(
             0,
             0,
             DockerCliOutputParser.ProbeFailedSummary,
-            DockerCliOutputParser.ProbeFailedSummary);
+            DockerCliOutputParser.ProbeFailedSummary,
+            detail);
     }
 }

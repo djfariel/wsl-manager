@@ -85,5 +85,15 @@ public sealed class DockerCliOutputParserTests
         string joined = string.Join(' ', DockerCliOutputParser.ListAllContainersImageAndStateArgs);
         Assert.Contains("docker ps -a", joined, StringComparison.Ordinal);
         Assert.DoesNotContain("reference=", joined, StringComparison.Ordinal);
+        Assert.Contains("|", joined, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseContainerStatesForImageReference_handles_empty_ps_stdout()
+    {
+        const string reference = "ghcr.io/djfariel/worldgate-runner:2026.09.04-2";
+        (int running, int total) = DockerCliOutputParser.ParseContainerStatesForImageReference(string.Empty, reference);
+        Assert.Equal(0, running);
+        Assert.Equal(0, total);
     }
 }
