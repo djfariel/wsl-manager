@@ -5,12 +5,6 @@ namespace WorldGate.Monitor;
 
 internal sealed class ManagedImageSeedService
 {
-    private static readonly string[] DefaultBuildContextCandidates =
-    [
-        @"E:\Projects\Worktrees\WorldGate\infra\arc\runner",
-        @"E:\Projects\RemoteRepositories\WorldGate\infra\arc\runner",
-    ];
-
     private readonly ConfigurationStore configurationStore;
     private readonly TimeSpan commandTimeout;
 
@@ -56,13 +50,12 @@ internal sealed class ManagedImageSeedService
         CancellationToken cancellationToken)
     {
         var candidates = new List<ManagedImageDiscoveryCandidate>();
-        string? buildContext = ResolveRunnerBuildContext();
 
         WslRuntimeSnapshot runtime = WslRuntimeProbe.Detect();
         if (runtime.State == WslRuntimeState.Running)
         {
             var runner = new WslCommandRunner(configuration.WslDistribution, commandTimeout);
-            await AddDockerCandidatesAsync(runner, buildContext, candidates, cancellationToken).ConfigureAwait(false);
+            await AddDockerCandidatesAsync(runner, candidates, cancellationToken).ConfigureAwait(false);
             await AddKubernetesCandidatesAsync(runner, configuration, candidates, cancellationToken).ConfigureAwait(false);
         }
 
@@ -71,7 +64,6 @@ internal sealed class ManagedImageSeedService
 
     private static async Task AddDockerCandidatesAsync(
         WslCommandRunner runner,
-        string? buildContext,
         List<ManagedImageDiscoveryCandidate> candidates,
         CancellationToken cancellationToken)
     {
@@ -91,9 +83,7 @@ internal sealed class ManagedImageSeedService
                 continue;
             }
 
-            string? context = reference.Contains("worldgate-runner", StringComparison.OrdinalIgnoreCase)
-                ? buildContext
-                : null;
+            string? context = ManagedImageBuildContextResolver.ResolveForImageReference(reference);
 
             candidates.Add(new ManagedImageDiscoveryCandidate(
                 reference,
@@ -158,18 +148,6 @@ internal sealed class ManagedImageSeedService
         return unique;
     }
 
-    private static string? ResolveRunnerBuildContext()
-    {
-        foreach (string path in DefaultBuildContextCandidates)
-        {
-            if (Directory.Exists(path))
-            {
-                return path;
-            }
-        }
-
-        return null;
-    }
 }
 
 internal sealed record ManagedImageSeedResult(

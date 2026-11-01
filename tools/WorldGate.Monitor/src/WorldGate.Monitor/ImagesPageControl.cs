@@ -18,8 +18,13 @@ internal sealed class ImagesPageControl : UserControl
     private MonitorConfiguration baseline = new();
     private string configurationPath = string.Empty;
     private IReadOnlyDictionary<string, ManagedImageStatusSnapshot> statusById = new Dictionary<string, ManagedImageStatusSnapshot>();
+    private int modalInteractionDepth;
+    private bool pendingListRebuild;
+    private bool pendingStatusRefresh;
 
     public event EventHandler? ManagedImagesChanged;
+
+    public bool PausesBackgroundRefresh => modalInteractionDepth > 0;
 
     public ImagesPageControl(string? wslDistribution)
     {
@@ -55,24 +60,46 @@ internal sealed class ImagesPageControl : UserControl
         runnerList.MouseDoubleClick += (_, e) => OnEdit(runnerList, e);
         otherList.MouseDoubleClick += (_, e) => OnEdit(otherList, e);
         addImageButton.Click += (_, _) => AddEntry();
-        refreshButton.Click += async (_, _) => await RefreshStatusAsync();
+        refreshButton.Click += async (_, _) => await RefreshStatusAsync(force: true);
 
         ReloadFromDisk(silent: true);
     }
 
     public IReadOnlyList<ManagedImageEntry> GetManagedImages() => baseline.ManagedImages;
 
-    public async Task RefreshStatusAsync()
+    public async Task RefreshStatusAsync(bool force = false)
     {
+        if (!force && PausesBackgroundRefresh)
+        {
+            pendingStatusRefresh = true;
+            return;
+        }
+
         IReadOnlyList<ManagedImageStatusSnapshot> snapshots =
             await statusService.ProbeAllAsync(baseline.ManagedImages).ConfigureAwait(true);
         statusById = snapshots.ToDictionary(snapshot => snapshot.EntryId, snapshot => snapshot);
-        PopulateList(runnerList, ManagedImageCategory.GitHubRunner);
-        PopulateList(otherList, ManagedImageCategory.OtherWorkload);
+
+        if (PausesBackgroundRefresh)
+        {
+            pendingStatusRefresh = true;
+            ApplyStatusToVisibleItems(runnerList);
+            ApplyStatusToVisibleItems(otherList);
+            return;
+        }
+
+        RebuildList(runnerList, ManagedImageCategory.GitHubRunner);
+        RebuildList(otherList, ManagedImageCategory.OtherWorkload);
     }
 
     public void ReloadOnShow()
     {
+        if (PausesBackgroundRefresh)
+        {
+            pendingListRebuild = true;
+            pendingStatusRefresh = true;
+            return;
+        }
+
         ReloadFromDisk(silent: true);
         _ = RefreshStatusAsync();
     }
@@ -109,6 +136,12 @@ internal sealed class ImagesPageControl : UserControl
 
     private void ReloadFromDisk(bool silent)
     {
+        if (PausesBackgroundRefresh)
+        {
+            pendingListRebuild = true;
+            return;
+        }
+
         ConfigurationLoadResult loaded = configurationStore.LoadOrCreate();
         configurationPath = loaded.ConfigurationPath;
         baseline = loaded.Configuration with { ManagedImages = loaded.Configuration.ManagedImages.ToArray() };
@@ -118,8 +151,8 @@ internal sealed class ImagesPageControl : UserControl
 
         EnsureColumns(runnerList);
         EnsureColumns(otherList);
-        PopulateList(runnerList, ManagedImageCategory.GitHubRunner);
-        PopulateList(otherList, ManagedImageCategory.OtherWorkload);
+        RebuildList(runnerList, ManagedImageCategory.GitHubRunner);
+        RebuildList(otherList, ManagedImageCategory.OtherWorkload);
     }
 
     private static void EnsureColumns(ListView list)
@@ -136,21 +169,98 @@ internal sealed class ImagesPageControl : UserControl
         list.Columns.Add("Actions", 80);
     }
 
-    private void PopulateList(ListView list, ManagedImageCategory category)
+    private void RebuildList(ListView list, ManagedImageCategory category)
     {
-        list.Items.Clear();
-        foreach (ManagedImageEntry entry in baseline.ManagedImages.Where(entry => entry.Category == category))
+        if (PausesBackgroundRefresh)
         {
-            string location = FormatLocation(entry);
-            statusById.TryGetValue(entry.Id, out ManagedImageStatusSnapshot? snapshot);
-            string status = snapshot?.Summary ?? "—";
-            var item = new ListViewItem(entry.DisplayName);
-            item.SubItems.Add(location);
-            item.SubItems.Add(entry.MonitorStatus ? "On" : "Off");
-            item.SubItems.Add(status);
-            item.SubItems.Add("Right-click");
-            item.Tag = entry;
-            list.Items.Add(item);
+            pendingListRebuild = true;
+            return;
+        }
+
+        string? selectedId = GetSelectedEntryId(list);
+        list.BeginUpdate();
+        try
+        {
+            list.Items.Clear();
+            foreach (ManagedImageEntry entry in baseline.ManagedImages.Where(entry => entry.Category == category))
+            {
+                list.Items.Add(CreateListItem(entry));
+            }
+
+            RestoreSelection(list, selectedId);
+        }
+        finally
+        {
+            list.EndUpdate();
+        }
+    }
+
+    private void ApplyStatusToVisibleItems(ListView list)
+    {
+        list.BeginUpdate();
+        try
+        {
+            foreach (ListViewItem item in list.Items)
+            {
+                if (item.Tag is not ManagedImageEntry entry)
+                {
+                    continue;
+                }
+
+                ManagedImageEntry? current = ManagedImageEntryCollection.FindById(baseline.ManagedImages, entry.Id) ?? entry;
+                item.Tag = current;
+                item.SubItems[3].Text = FormatStatus(current.Id);
+            }
+        }
+        finally
+        {
+            list.EndUpdate();
+        }
+    }
+
+    private ListViewItem CreateListItem(ManagedImageEntry entry)
+    {
+        var item = new ListViewItem(entry.DisplayName);
+        item.SubItems.Add(FormatLocation(entry));
+        item.SubItems.Add(entry.MonitorStatus ? "On" : "Off");
+        item.SubItems.Add(FormatStatus(entry.Id));
+        item.SubItems.Add("Right-click");
+        item.Tag = entry;
+        return item;
+    }
+
+    private string FormatStatus(string entryId)
+    {
+        statusById.TryGetValue(entryId, out ManagedImageStatusSnapshot? snapshot);
+        return snapshot?.Summary ?? "—";
+    }
+
+    private static string? GetSelectedEntryId(ListView list)
+    {
+        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry entry)
+        {
+            return null;
+        }
+
+        return entry.Id;
+    }
+
+    private static void RestoreSelection(ListView list, string? entryId)
+    {
+        if (string.IsNullOrWhiteSpace(entryId))
+        {
+            return;
+        }
+
+        foreach (ListViewItem item in list.Items)
+        {
+            if (item.Tag is ManagedImageEntry entry && entry.Id == entryId)
+            {
+                item.Selected = true;
+                item.Focused = true;
+                item.EnsureVisible();
+                return;
+            }
         }
     }
 
@@ -173,19 +283,22 @@ internal sealed class ImagesPageControl : UserControl
 
     private void AddEntry()
     {
-        using var addDialog = new AddManagedImageDialog();
-        if (addDialog.ShowDialog(FindForm()) != DialogResult.OK)
+        using (BeginModalInteraction())
         {
-            return;
-        }
+            using var addDialog = new AddManagedImageDialog();
+            if (addDialog.ShowDialog(FindForm()) != DialogResult.OK)
+            {
+                return;
+            }
 
-        ManagedImageEntry? entry = addDialog.BuildEntry();
-        if (entry is null)
-        {
-            return;
-        }
+            ManagedImageEntry? entry = addDialog.BuildEntry();
+            if (entry is null)
+            {
+                return;
+            }
 
-        SaveEntries(baseline.ManagedImages.Concat([entry]).ToArray());
+            SaveEntries(baseline.ManagedImages.Concat([entry]).ToArray());
+        }
     }
 
     private void OnEdit(ListView list, MouseEventArgs e)
@@ -195,124 +308,165 @@ internal sealed class ImagesPageControl : UserControl
             return;
         }
 
-        EditSelected(list);
+        ListViewItem? item = list.GetItemAt(e.X, e.Y);
+        if (item?.Tag is not ManagedImageEntry entry)
+        {
+            return;
+        }
+
+        EditSelected(list, entry.Id);
     }
 
-    private void EditSelected(ListView list)
+    private void EditSelected(ListView list, string? entryId = null)
     {
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry existing)
+        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId);
+        if (existing is null)
         {
             return;
         }
 
-        using var dialog = new AddManagedImageDialog(existing);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        string editEntryId = existing.Id;
+        using (BeginModalInteraction())
         {
-            return;
+            using var dialog = new AddManagedImageDialog(existing);
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+            {
+                return;
+            }
+
+            ManagedImageEntry? updated = dialog.BuildEntry(editEntryId);
+            if (updated is null)
+            {
+                return;
+            }
+
+            ManagedImageEntry? latest = ManagedImageEntryCollection.FindById(baseline.ManagedImages, editEntryId);
+            if (latest is null)
+            {
+                MessageBox.Show(FindForm(), "This image entry is no longer in the list. Refresh and try again.", "Edit image", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            IReadOnlyList<ManagedImageEntry> next = ManagedImageEntryCollection.ReplaceById(baseline.ManagedImages, updated);
+            SaveEntries(next);
+        }
+    }
+
+    private ManagedImageEntry? ResolveEntryForEdit(ListView list, string? entryId)
+    {
+        if (!string.IsNullOrWhiteSpace(entryId))
+        {
+            return ManagedImageEntryCollection.FindById(baseline.ManagedImages, entryId);
         }
 
-        ManagedImageEntry? updated = dialog.BuildEntry(existing.Id);
-        if (updated is null)
+        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry selected)
         {
-            return;
+            return null;
         }
 
-        ManagedImageEntry[] next = baseline.ManagedImages
-            .Select(entry => entry.Id == existing.Id ? updated : entry)
-            .ToArray();
-        SaveEntries(next);
+        return ManagedImageEntryCollection.FindById(baseline.ManagedImages, selected.Id) ?? selected;
     }
 
     private void RemoveSelected(ListView list)
     {
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry existing)
+        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        if (existing is null)
         {
             return;
         }
 
-        DialogResult confirm = MessageBox.Show(
-            FindForm(),
-            $"Remove “{existing.DisplayName}” from the managed list?",
-            "Remove image",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button2);
-        if (confirm != DialogResult.Yes)
+        using (BeginModalInteraction())
         {
-            return;
-        }
+            DialogResult confirm = MessageBox.Show(
+                FindForm(),
+                $"Remove “{existing.DisplayName}” from the managed list?",
+                "Remove image",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
 
-        SaveEntries(baseline.ManagedImages.Where(entry => entry.Id != existing.Id).ToArray());
+            SaveEntries(baseline.ManagedImages.Where(entry => entry.Id != existing.Id).ToArray());
+        }
     }
 
     private async Task InstallSelectedAsync(ListView list)
     {
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry existing)
+        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        if (existing is null)
         {
             return;
         }
 
-        string plan = ManagedImageInstallHelper.DescribeInstallPlan(existing);
-        DialogResult choice = MessageBox.Show(
-            FindForm(),
-            $"{plan}\n\nRun this in WSL now? (Requires WSL running.)",
-            "Install image",
-            MessageBoxButtons.YesNoCancel,
-            MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button1);
-        if (choice == DialogResult.Cancel)
+        using (BeginModalInteraction())
         {
-            return;
-        }
-
-        if (choice == DialogResult.No)
-        {
-            try
+            string plan = ManagedImageInstallHelper.DescribeInstallPlan(existing);
+            DialogResult choice = MessageBox.Show(
+                FindForm(),
+                $"{plan}\n\nRun this in WSL now? (Requires WSL running.)",
+                "Install image",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1);
+            if (choice == DialogResult.Cancel)
             {
-                Clipboard.SetText(plan);
-                MessageBox.Show(FindForm(), "Install command copied to the clipboard.", "Install image", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception exception)
-            {
-                MessageBox.Show(FindForm(), exception.Message, "Clipboard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
 
-            return;
+            if (choice == DialogResult.No)
+            {
+                try
+                {
+                    Clipboard.SetText(plan);
+                    MessageBox.Show(FindForm(), "Install command copied to the clipboard.", "Install image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(FindForm(), exception.Message, "Clipboard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                return;
+            }
+
+            IReadOnlyList<string> command = !string.IsNullOrWhiteSpace(existing.BuildContextPath)
+                ? ManagedImageInstallHelper.BuildWslBuildCommand(existing)
+                : ManagedImageInstallHelper.BuildWslPullCommand(existing);
+
+            var runner = new WslCommandRunner(baseline.WslDistribution, TimeSpan.FromMinutes(30));
+            WslCommandResult result = await runner.RunAsync(command, CancellationToken.None).ConfigureAwait(true);
+            if (!result.Success)
+            {
+                string detail = !string.IsNullOrWhiteSpace(result.StandardError)
+                    ? result.StandardError.Trim()
+                    : result.Error ?? "Install failed";
+                MessageBox.Show(FindForm(), detail, "Install failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            MessageBox.Show(FindForm(), "Install command finished successfully.", "Install image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            await RefreshStatusAsync(force: true);
         }
-
-        IReadOnlyList<string> command = !string.IsNullOrWhiteSpace(existing.BuildContextPath)
-            ? ManagedImageInstallHelper.BuildWslBuildCommand(existing)
-            : ManagedImageInstallHelper.BuildWslPullCommand(existing);
-
-        var runner = new WslCommandRunner(baseline.WslDistribution, TimeSpan.FromMinutes(30));
-        WslCommandResult result = await runner.RunAsync(command, CancellationToken.None).ConfigureAwait(true);
-        if (!result.Success)
-        {
-            string detail = !string.IsNullOrWhiteSpace(result.StandardError)
-                ? result.StandardError.Trim()
-                : result.Error ?? "Install failed";
-            MessageBox.Show(FindForm(), detail, "Install failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
-        }
-
-        MessageBox.Show(FindForm(), "Install command finished successfully.", "Install image", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        await RefreshStatusAsync();
     }
 
     private void ToggleMonitor(ListView list)
     {
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry existing)
+        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        if (existing is null)
         {
             return;
         }
 
         ManagedImageEntry updated = existing with { MonitorStatus = !existing.MonitorStatus };
-        SaveEntries(baseline.ManagedImages.Select(entry => entry.Id == existing.Id ? updated : entry).ToArray());
+        SaveEntries(ManagedImageEntryCollection.ReplaceById(baseline.ManagedImages, updated));
     }
 
     private void OpenBuildPath(ListView list)
     {
-        if (list.SelectedItems.Count == 0 || list.SelectedItems[0].Tag is not ManagedImageEntry existing)
+        ManagedImageEntry? existing = ResolveEntryForEdit(list, entryId: null);
+        if (existing is null)
         {
             return;
         }
@@ -344,9 +498,55 @@ internal sealed class ImagesPageControl : UserControl
         }
 
         baseline = next;
-        PopulateList(runnerList, ManagedImageCategory.GitHubRunner);
-        PopulateList(otherList, ManagedImageCategory.OtherWorkload);
+        RebuildList(runnerList, ManagedImageCategory.GitHubRunner);
+        RebuildList(otherList, ManagedImageCategory.OtherWorkload);
         ManagedImagesChanged?.Invoke(this, EventArgs.Empty);
         _ = RefreshStatusAsync();
+    }
+
+    private ModalInteractionScope BeginModalInteraction() => new(this);
+
+    private void EndModalInteraction()
+    {
+        modalInteractionDepth = Math.Max(0, modalInteractionDepth - 1);
+        if (modalInteractionDepth > 0)
+        {
+            return;
+        }
+
+        if (pendingListRebuild)
+        {
+            pendingListRebuild = false;
+            ReloadFromDisk(silent: true);
+        }
+
+        if (pendingStatusRefresh)
+        {
+            pendingStatusRefresh = false;
+            _ = RefreshStatusAsync(force: true);
+        }
+    }
+
+    private sealed class ModalInteractionScope : IDisposable
+    {
+        private readonly ImagesPageControl owner;
+        private bool disposed;
+
+        public ModalInteractionScope(ImagesPageControl owner)
+        {
+            this.owner = owner;
+            owner.modalInteractionDepth++;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            owner.EndModalInteraction();
+        }
     }
 }

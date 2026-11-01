@@ -309,7 +309,7 @@ internal sealed class WslManagerMainForm : Form
         RebuildManagedBadges(managedSnapshots);
         homePage.ApplyMonitoredSnapshots(managedSnapshots);
 
-        if (imagesPage.Visible)
+        if (imagesPage.Visible && !imagesPage.PausesBackgroundRefresh)
         {
             await imagesPage.RefreshStatusAsync();
         }
