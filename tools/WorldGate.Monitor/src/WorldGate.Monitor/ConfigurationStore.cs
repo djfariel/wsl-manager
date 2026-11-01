@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WorldGate.Monitor;
 
@@ -20,6 +21,7 @@ internal sealed class ConfigurationStore
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     public ConfigurationSaveResult Save(MonitorConfiguration configuration, string configurationPath)
