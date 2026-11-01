@@ -13,8 +13,12 @@ internal sealed class WslManagerMainForm : Form
     private readonly WslLifecycleService lifecycleService = new();
     private readonly WslRuntimeStatusService runtimeStatusService = new();
     private WslConfigDocument workingCopy = WslConfigDocument.CreateDefault();
+    private WslConfigDocument baselineDocument = WslConfigDocument.CreateDefault();
     private string? savedBaseline;
     private bool suppressDirtyEvents;
+
+    private static readonly Color DirtyRowBackColor = Color.FromArgb(255, 251, 204);
+    private readonly List<ConfigFieldRow> fieldRows = [];
 
     private readonly HelpProvider helpProvider = new();
     private readonly ToolTip fieldToolTip = new() { AutoPopDelay = 12000, InitialDelay = 400, ReshowDelay = 200, ShowAlways = true };
@@ -82,28 +86,38 @@ internal sealed class WslManagerMainForm : Form
 
         var configGroup = CreateGroupBox("WSL configuration", DockStyle.Fill);
 
-        var configHeader = new TableLayoutPanel
+        var configBody = new TableLayoutPanel
         {
-            Dock = DockStyle.Top,
-            AutoSize = true,
+            Dock = DockStyle.Fill,
             ColumnCount = 1,
-            Padding = new Padding(8, 4, 8, 0),
+            RowCount = 2,
+            Padding = new Padding(4, 0, 4, 0),
         };
-        configHeader.Controls.Add(pathLabel, 0, 0);
+        configBody.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        configBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        configBody.Controls.Add(pathLabel, 0, 0);
+        pathLabel.Margin = new Padding(4, 4, 4, 6);
+        pathLabel.Padding = Padding.Empty;
 
         var scroll = new Panel
         {
             Dock = DockStyle.Fill,
             AutoScroll = true,
-            Padding = new Padding(0, 4, 0, 0),
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = SystemColors.Window,
+            AutoScrollMargin = new Size(0, 8),
+            Padding = new Padding(8, 12, 8, 8),
         };
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Top,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 3,
-            Padding = new Padding(8),
+            Location = new Point(0, 0),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Padding = Padding.Empty,
+            Margin = Padding.Empty,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
@@ -130,8 +144,9 @@ internal sealed class WslManagerMainForm : Form
         AddFieldRow(layout, "kernelCommandLine", "kernelCommandLine", kernelCommandLineBox);
 
         scroll.Controls.Add(layout);
-        configGroup.Controls.Add(configHeader);
-        configGroup.Controls.Add(scroll);
+        scroll.Resize += (_, _) => SyncConfigLayoutWidth(scroll, layout);
+        configBody.Controls.Add(scroll, 0, 1);
+        configGroup.Controls.Add(configBody);
 
         var actionsGroup = CreateGroupBox("Actions", DockStyle.Top);
         var buttonBar = new FlowLayoutPanel
@@ -163,6 +178,8 @@ internal sealed class WslManagerMainForm : Form
         statusPollTimer.Tick += async (_, _) => await RefreshRuntimeBadgeAsync();
         Shown += async (_, _) =>
         {
+            SyncConfigLayoutWidth(scroll, layout);
+            scroll.AutoScrollPosition = new Point(0, 0);
             statusPollTimer.Start();
             await RefreshRuntimeBadgeAsync();
         };
@@ -228,6 +245,7 @@ internal sealed class WslManagerMainForm : Form
         }
 
         workingCopy = loaded.Document.Clone();
+        baselineDocument = workingCopy.Clone();
         savedBaseline = loaded.SavedBaseline ?? WslConfigIniSerializer.Serialize(workingCopy);
         pathLabel.Text = loaded.CreatedFromDefault
             ? $"File will be created on save: {loaded.Path}"
@@ -262,6 +280,7 @@ internal sealed class WslManagerMainForm : Form
         }
 
         UpdateTitle();
+        RefreshFieldRowStyles();
     }
 
     private async Task SaveAsync(bool promptRestart)
@@ -299,8 +318,10 @@ internal sealed class WslManagerMainForm : Form
         }
 
         savedBaseline = saveResult.SavedBaseline;
+        baselineDocument = workingCopy.Clone();
         pathLabel.Text = configFileService.DefaultPath;
         UpdateTitle();
+        RefreshFieldRowStyles();
 
         if (promptRestart)
         {
@@ -396,6 +417,7 @@ internal sealed class WslManagerMainForm : Form
             if (!suppressDirtyEvents)
             {
                 UpdateTitle();
+                RefreshFieldRowStyles();
             }
         }
 
@@ -438,6 +460,68 @@ internal sealed class WslManagerMainForm : Form
         layout.Controls.Add(helpButton, 0, row);
         layout.Controls.Add(label, 1, row);
         layout.Controls.Add(editor, 2, row);
+
+        fieldRows.Add(new ConfigFieldRow(fieldKey, helpButton, label, editor, () => GetControlValue(fieldKey, editor)));
+    }
+
+    private string? GetControlValue(string fieldKey, Control editor) => editor switch
+    {
+        TextBox textBox => NullIfEmpty(textBox.Text),
+        ComboBox combo => fieldKey.Equals("autoMemoryReclaim", StringComparison.OrdinalIgnoreCase)
+            ? GetAutoMemoryReclaimCombo(combo)
+            : GetBooleanCombo(combo),
+        _ => null,
+    };
+
+    private void RefreshFieldRowStyles()
+    {
+        foreach (ConfigFieldRow row in fieldRows)
+        {
+            string? current = row.GetCurrentValue();
+            string? baseline = baselineDocument.GetKnown(row.FieldKey);
+            bool rowDirty = !FieldValuesEqual(current, baseline);
+            ApplyFieldRowStyle(row, rowDirty);
+        }
+    }
+
+    private static bool FieldValuesEqual(string? current, string? baseline) =>
+        string.Equals(NormalizeFieldValue(current), NormalizeFieldValue(baseline), StringComparison.Ordinal);
+
+    private static string? NormalizeFieldValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private void ApplyFieldRowStyle(ConfigFieldRow row, bool rowDirty)
+    {
+        row.Editor.BackColor = rowDirty ? DirtyRowBackColor : SystemColors.Window;
+
+        FontStyle editorStyle = rowDirty ? FontStyle.Bold : FontStyle.Regular;
+        if (row.Editor.Font.Style != editorStyle)
+        {
+            row.Editor.Font = new Font(Font, editorStyle);
+        }
+    }
+
+    private static void SyncConfigLayoutWidth(Panel scroll, TableLayoutPanel layout)
+    {
+        int width = scroll.ClientSize.Width - scroll.Padding.Horizontal;
+        if (width > 0 && layout.Width != width)
+        {
+            layout.Width = width;
+        }
+    }
+
+    private sealed class ConfigFieldRow(
+        string fieldKey,
+        Control help,
+        Label caption,
+        Control editor,
+        Func<string?> getCurrentValue)
+    {
+        public string FieldKey { get; } = fieldKey;
+        public Control Help { get; } = help;
+        public Label Caption { get; } = caption;
+        public Control Editor { get; } = editor;
+        public Func<string?> GetCurrentValue { get; } = getCurrentValue;
     }
 
     private Control CreateHelpIndicator(string fieldKey, Control editor)
