@@ -51,6 +51,8 @@ internal sealed class WslManagerMainForm : Form
         Padding = new Padding(4),
     };
     private int monitorBadgeRefreshGeneration;
+    private readonly Dictionary<string, StatusBadgeControl> wslRuntimeBadgesByKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ManagedImageStatusBadgeControl> managedBadgesByKey = new(StringComparer.Ordinal);
     private readonly System.Windows.Forms.Timer statusPollTimer = new() { Interval = StatusPollIntervalMs };
 
     private readonly HomePageControl homePage = new();
@@ -320,8 +322,8 @@ internal sealed class WslManagerMainForm : Form
             return;
         }
 
-        RebuildWslRuntimeBadges(runtimeSnapshot);
-        RebuildManagedBadges(managedSnapshots);
+        UpdateWslRuntimeBadges(runtimeSnapshot);
+        UpdateManagedBadges(managedSnapshots);
         homePage.ApplyMonitoredSnapshots(managedSnapshots);
 
         if (imagesPage.Visible && !imagesPage.PausesBackgroundRefresh)
@@ -330,48 +332,25 @@ internal sealed class WslManagerMainForm : Form
         }
     }
 
-    private void RebuildWslRuntimeBadges(WslRuntimeSnapshot snapshot)
+    private void UpdateWslRuntimeBadges(WslRuntimeSnapshot snapshot)
     {
         int contentWidth = GetMonitorBadgeContentWidth();
-        wslRuntimeBadgeRow.Controls.Clear();
-
-        if (snapshot.State == WslRuntimeState.Running
-            && snapshot.RunningDistributions is { Count: > 1 } distros)
-        {
-            foreach (string distro in distros)
-            {
-                AddWslRuntimeBadge(contentWidth, $"WSL runtime — {distro}", WslRuntimeSnapshot.Running([distro]));
-            }
-        }
-        else
-        {
-            AddWslRuntimeBadge(contentWidth, "WSL runtime", snapshot);
-        }
-
+        MonitorBadgeFlowSync.SyncWslRuntimeBadges(
+            wslRuntimeBadgeRow,
+            wslRuntimeBadgesByKey,
+            snapshot,
+            contentWidth);
         SyncMonitorBadgeColumnWidth();
     }
 
-    private void AddWslRuntimeBadge(int contentWidth, string caption, WslRuntimeSnapshot snapshot)
-    {
-        var badge = new StatusBadgeControl();
-        badge.SetCaption(caption);
-        badge.ApplySnapshot(snapshot);
-        MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
-        wslRuntimeBadgeRow.Controls.Add(badge);
-    }
-
-    private void RebuildManagedBadges(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
+    private void UpdateManagedBadges(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
     {
         int contentWidth = GetMonitorBadgeContentWidth();
-        managedBadgeRow.Controls.Clear();
-        foreach (ManagedImageStatusSnapshot snapshot in snapshots)
-        {
-            var badge = new ManagedImageStatusBadgeControl();
-            badge.ApplySnapshot(snapshot);
-            MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
-            managedBadgeRow.Controls.Add(badge);
-        }
-
+        MonitorBadgeFlowSync.SyncManagedImageBadges(
+            managedBadgeRow,
+            managedBadgesByKey,
+            snapshots,
+            contentWidth);
         SyncMonitorBadgeColumnWidth();
     }
 

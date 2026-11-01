@@ -19,6 +19,8 @@ internal sealed class HomePageControl : UserControl
         Padding = new Padding(4),
     };
 
+    private readonly Dictionary<string, ManagedImageStatusBadgeControl> monitoredBadgesByKey = new(StringComparer.Ordinal);
+
     private readonly Label emptyLabel = new()
     {
         AutoSize = true,
@@ -60,23 +62,36 @@ internal sealed class HomePageControl : UserControl
 
     public void ApplyMonitoredSnapshots(IReadOnlyList<ManagedImageStatusSnapshot> snapshots)
     {
-        monitoredPanel.Controls.Clear();
+        emptyLabel.Visible = snapshots.Count == 0;
         if (snapshots.Count == 0)
         {
-            emptyLabel.Visible = true;
+            monitoredPanel.SuspendLayout();
+            try
+            {
+                foreach (string removedKey in monitoredBadgesByKey.Keys.ToList())
+                {
+                    if (monitoredBadgesByKey.TryGetValue(removedKey, out ManagedImageStatusBadgeControl? badge))
+                    {
+                        monitoredPanel.Controls.Remove(badge);
+                        badge.Dispose();
+                        monitoredBadgesByKey.Remove(removedKey);
+                    }
+                }
+            }
+            finally
+            {
+                monitoredPanel.ResumeLayout(performLayout: true);
+            }
+
             return;
         }
 
-        emptyLabel.Visible = false;
         int contentWidth = GetMonitoredBadgeContentWidth();
-        foreach (ManagedImageStatusSnapshot snapshot in snapshots)
-        {
-            var badge = new ManagedImageStatusBadgeControl();
-            badge.ApplySnapshot(snapshot);
-            MonitorBadgeLayout.ConstrainBadgeWidth(badge, contentWidth);
-            monitoredPanel.Controls.Add(badge);
-        }
-
+        MonitorBadgeFlowSync.SyncManagedImageBadges(
+            monitoredPanel,
+            monitoredBadgesByKey,
+            snapshots,
+            contentWidth);
         SyncMonitoredBadgeWidths();
     }
 
